@@ -1,0 +1,12 @@
+# Personal data NEVER goes to GitHub. The app's code is public; your life is not.
+_mydata/
+*.xlsx
+*.xlsx.url
+*.docx
+Screenshot*.png
+compound-backup-*.json
+compound-seed*.json
+
+# local tooling
+.claude/
+node_modules/

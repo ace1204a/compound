@@ -100,5 +100,9 @@ export function replaceAll(newData) { data = migrate(newData); save(); }
 /** Wipe back to empty (used by Settings → reset). */
 export function resetAll() { data = defaultData(); save(); }
 
+/** The empty/default value for one module — used by sync to tell
+ *  "this device has nothing here" apart from "this device has data". */
+export function emptyModule(mod) { return defaultData()[mod]; }
+
 /** Small unique id. */
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

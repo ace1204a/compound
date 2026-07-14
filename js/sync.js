@@ -6,7 +6,7 @@
 // Strategy: last-write-wins per module, newest timestamp wins.
 // ============================================================
 
-import { getData, replaceAll, save, subscribe } from './store.js';
+import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
 const SYNC_MODULES = ['habits', 'tasks', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books'];
 const META_KEY = 'compound.sync.meta.v1';
@@ -84,6 +84,42 @@ export async function currentUser() {
   } catch { return null; }
 }
 
+// ---------- sync decision (pure + testable) ----------
+// Given local data, the remote rows, and the snapshot of what we last
+// synced, decide what to pull and what to push. The one ironclad rule:
+// an EMPTY module never overwrites a non-empty one. That's what stops a
+// fresh device from wiping the cloud.
+export function computeSyncActions(local, remote, snapshots) {
+  const pulls = {};
+  const pushes = [];
+  const nextSnapshots = { ...snapshots };
+
+  for (const mod of SYNC_MODULES) {
+    const localJson = JSON.stringify(local[mod]);
+    const emptyJson = JSON.stringify(emptyModule(mod));
+    const localIsEmpty = localJson === emptyJson;
+    const snap = snapshots[mod];
+    const localChanged = snap !== undefined && localJson !== snap;
+
+    const r = remote[mod];
+    const remoteExists = !!r;
+    const remoteJson = remoteExists ? JSON.stringify(r.data) : null;
+    const remoteIsEmpty = remoteExists && remoteJson === emptyJson;
+
+    let finalJson = localJson;
+    if (localChanged && !localIsEmpty) {
+      pushes.push(mod);                                   // I made real edits here
+    } else if (!localIsEmpty && (!remoteExists || remoteIsEmpty)) {
+      pushes.push(mod);                                   // I have data, cloud doesn't → seed it
+    } else if (remoteExists && !remoteIsEmpty && remoteJson !== localJson) {
+      pulls[mod] = r.data;                                // cloud has the good/newer copy → take it
+      finalJson = remoteJson;
+    }
+    nextSnapshots[mod] = finalJson;
+  }
+  return { pulls, pushes, nextSnapshots };
+}
+
 // ---------- sync core ----------
 export async function syncNow() {
   if (!configured()) return { ok: false, reason: 'not configured' };
@@ -100,33 +136,22 @@ export async function syncNow() {
     if (error) throw error;
     const remote = Object.fromEntries((rows || []).map((r) => [r.module, r]));
 
-    const localUpdatedAt = d.settings.updatedAt || new Date(0).toISOString();
-    const toPush = [];
-    let pulled = 0;
+    const { pulls, pushes, nextSnapshots } = computeSyncActions(d, remote, m.snapshots);
+    const now = new Date().toISOString();
 
-    for (const mod of SYNC_MODULES) {
-      const localJson = JSON.stringify(d[mod]);
-      const localChanged = m.snapshots[mod] !== localJson;
-      const r = remote[mod];
-      const remoteChanged = r && (!m.lastSyncAt || r.updated_at > m.lastSyncAt);
+    const pulledMods = Object.keys(pulls);
+    for (const mod of pulledMods) d[mod] = pulls[mod];
+    if (pulledMods.length) replaceAll(d);
 
-      if (remoteChanged && (!localChanged || r.updated_at > localUpdatedAt)) {
-        d[mod] = r.data;                       // remote wins
-        m.snapshots[mod] = JSON.stringify(r.data);
-        pulled++;
-      } else if (localChanged || !r) {
-        toPush.push({ user_id: user.id, module: mod, data: d[mod], updated_at: new Date().toISOString() });
-        m.snapshots[mod] = localJson;
-      }
-    }
-
-    if (pulled) { replaceAll(d); }
+    const toPush = pushes.map((mod) => ({ user_id: user.id, module: mod, data: d[mod], updated_at: now }));
     if (toPush.length) {
       const { error: upErr } = await c.from('modules').upsert(toPush);
       if (upErr) throw upErr;
     }
 
-    m.lastSyncAt = new Date().toISOString();
+    const pulled = pulledMods.length;
+    m.snapshots = nextSnapshots;
+    m.lastSyncAt = now;
     saveMeta(m);
     setStatus('signed-in', `synced ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`);
     return { ok: true, pulled, pushed: toPush.length };

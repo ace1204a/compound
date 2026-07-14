@@ -1,15 +1,16 @@
 // ============================================================
 // Today — the home screen and the heart of the app.
+//  - NOW/NEXT: what block of the plan you're in, right now
 //  - non-negotiables first (never-zero)
-//  - today's habits + today's tasks, ticked in place
-//  - the 30-second evening check-in that CATCHES a bad day
-//    the same night instead of writing off the week.
+//  - today's habits + tasks, ticked in place
+//  - evening check-in that catches a bad day the same night
 // ============================================================
 
 import { getData, update } from '../store.js';
-import { el, toast, todayKey, keyToDate } from '../ui.js';
-import { computeStreaks, isDoneToday, toggleToday } from './habits.js';
+import { el, toast, todayKey, keyToDate, addDays } from '../ui.js';
+import { computeStreaks, isDoneToday, toggleToday, weekCount } from './habits.js';
 import { toggleTask } from './tasks.js';
+import { nowAndNext } from './plan.js';
 
 const LINES = [
   'Small reps, compounded.',
@@ -29,34 +30,81 @@ function greeting() {
   return `Evening, ${name}.`;
 }
 
+function dayNumber() {
+  const start = new Date(getData().settings.createdAt || Date.now());
+  const days = Math.floor((keyToDate(todayKey()) - new Date(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000) + 1;
+  return Math.max(1, days);
+}
+
 function hero() {
   const line = LINES[keyToDate(todayKey()).getDate() % LINES.length];
+  const sleep = getData().plan.sleep;
   return el('div', { class: 'card card--accent hero' },
-    el('div', { class: 'hero__greet' }, greeting()),
+    el('div', { class: 'rowflex' },
+      el('div', { class: 'hero__greet' }, greeting()),
+      el('span', { class: 'spacer' }),
+      el('span', { class: 'chip chip--streak' }, `Day ${dayNumber()}`)),
     el('div', { class: 'hero__line' }, line),
-  );
+    sleep ? el('div', { class: 'row__meta', style: 'margin-top:8px' },
+      el('span', { class: 'chip' }, `🌙 bed ${sleep.bed}`),
+      el('span', { class: 'chip' }, `⏰ wake ${sleep.wake}`)) : null);
+}
+
+// ---------- NOW / NEXT ----------
+function nowCard() {
+  const { current, next } = nowAndNext(getData().plan.day);
+  if (!current && !next) return null;
+
+  const card = el('div', { class: 'card nowcard', onClick: () => { location.hash = '/plan'; }, style: 'cursor:pointer' });
+  if (current) {
+    card.append(
+      el('div', { class: 'nowcard__label' }, `NOW · since ${current.time}`),
+      el('div', { class: 'nowcard__title' }, current.title),
+      current.detail ? el('div', { class: 'card__sub' }, current.detail) : null);
+  } else {
+    card.append(el('div', { class: 'nowcard__label' }, 'DAY NOT STARTED'));
+  }
+  if (next) {
+    card.append(el('div', { class: 'nowcard__next' },
+      `Next → ${next.time} · ${next.title}${next.tomorrow ? ' (tomorrow)' : ''}`));
+  }
+  return card;
 }
 
 function habitLine(h, rerender) {
   const { current } = computeStreaks(h);
   const done = isDoneToday(h);
+  const tier = current >= 30 ? ' chip--t30' : current >= 7 ? ' chip--t7' : '';
+  const weekly = h.cadence && h.cadence.perWeek;
   return el('div', { class: 'row' + (done ? ' done' : '') },
     el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { toggleToday(h.id); rerender(); } }),
     el('div', { class: 'row__main' },
       el('div', { class: 'row__name' }, h.name),
-      current > 0 ? el('div', { class: 'row__meta' }, el('span', { class: 'chip chip--streak' }, `🔥 ${current}`)) : null,
-    ),
-  );
+      el('div', { class: 'row__meta' },
+        current > 0 ? el('span', { class: 'chip chip--streak' + tier }, `🔥 ${current}`) : null,
+        weekly ? el('span', { class: 'chip' }, `${weekCount(h)}/${h.cadence.perWeek} wk`) : null)));
 }
 
 function taskLine(t, rerender) {
   return el('div', { class: 'row' + (t.done ? ' done' : '') },
     el('button', { class: 'check' + (t.done ? ' on' : ''), 'aria-label': 'Complete', onClick: () => { toggleTask(t.id); rerender(); } }),
-    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, t.title)),
-  );
+    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, t.title)));
 }
 
 // ---------- Evening check-in ----------
+function ratingBars() {
+  const d = getData();
+  const days = Array.from({ length: 7 }, (_, i) => addDays(todayKey(), i - 6));
+  const wrap = el('div', { class: 'ratebars', title: 'Last 7 check-ins' });
+  for (const k of days) {
+    const c = d.checkins[k];
+    const r = c ? c.rating : 0;
+    const cls = !r ? '' : r <= 4 ? ' bad' : r <= 7 ? ' mid' : ' good';
+    wrap.append(el('div', { class: 'ratebar' + cls, style: `height:${Math.max(8, r * 3.2)}px`, title: `${k}: ${r || '—'}` }));
+  }
+  return wrap;
+}
+
 function checkinCard(rerender) {
   const d = getData();
   const key = todayKey();
@@ -65,19 +113,18 @@ function checkinCard(rerender) {
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'card__head' },
     el('div', { class: 'card__title' }, '🌙 Evening check-in'),
-    existing ? el('span', { class: 'chip chip--key' }, 'done') : el('span', { class: 'card__sub' }, '30 seconds')));
+    el('div', { class: 'rowflex' }, ratingBars(),
+      existing ? el('span', { class: 'chip chip--key' }, 'done') : el('span', { class: 'card__sub' }, '30s'))));
 
   let rating = existing ? existing.rating : 0;
   const ratingWrap = el('div', { class: 'rating' });
   function paintRating() {
     ratingWrap.className = 'rating' + (rating && rating <= 4 ? ' rating--low' : '');
-    ratingWrap.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i + 1 <= rating && (i + 1 === rating)));
-    // highlight only the chosen number
     ratingWrap.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i + 1 === rating));
   }
   for (let i = 1; i <= 10; i++) ratingWrap.append(el('button', { onClick: () => { rating = i; paintRating(); reflectLow(); } }, i));
 
-  const win = el('textarea', { placeholder: 'One win today (anything counts)…' }, );
+  const win = el('textarea', { placeholder: 'One win today (anything counts)…' });
   const lesson = el('textarea', { placeholder: 'One lesson / one thing to fix tomorrow…' });
   if (existing) { win.value = existing.win || ''; lesson.value = existing.lesson || ''; }
 
@@ -109,6 +156,9 @@ function render(view) {
   const d = getData();
 
   view.append(hero());
+
+  const nc = nowCard();
+  if (nc) view.append(nc);
 
   // Non-negotiables (never-zero)
   const keystones = d.habits.filter((h) => h.keystone);

@@ -26,7 +26,21 @@ function importData(file, rerender) {
   reader.onload = () => {
     try {
       const parsed = JSON.parse(reader.result);
-      if (!parsed || typeof parsed !== 'object' || !('habits' in parsed)) throw new Error('Not a Compound backup');
+      if (!parsed || typeof parsed !== 'object') throw new Error('Not a Compound file');
+
+      // PATCH file: updates only the sections it contains, touches nothing else.
+      if (parsed.__partial) {
+        const mods = Object.keys(parsed).filter((k) => k !== '__partial');
+        if (!mods.length) throw new Error('Patch file is empty');
+        if (!confirmAction(`This patch updates: ${mods.join(', ')}. Everything else stays untouched. Apply?`)) return;
+        update((d) => { for (const k of mods) if (k in d && k !== 'settings') d[k] = parsed[k]; });
+        toast('Patch applied ✓');
+        rerender();
+        return;
+      }
+
+      // FULL backup: replaces everything.
+      if (!('habits' in parsed)) throw new Error('Not a Compound backup');
       if (!confirmAction('Replace ALL current data on this device with this file?')) return;
       replaceAll(parsed);
       toast('Data loaded ✓');
@@ -168,7 +182,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.2 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.3 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

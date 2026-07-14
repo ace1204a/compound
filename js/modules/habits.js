@@ -67,13 +67,32 @@ function cadenceLabel(h) {
   return 'Daily';
 }
 
+let editingId = null; // habit currently being renamed
+
 function habitRow(h, rerender) {
   const { current, best } = computeStreaks(h);
   const done = isDoneToday(h);
+  const tier = current >= 30 ? ' chip--t30' : current >= 7 ? ' chip--t7' : '';
+
+  // rename mode: swap the name for an input (history stays intact)
+  if (editingId === h.id) {
+    const input = el('input', { type: 'text', value: h.name, maxlength: '60' });
+    const saveName = () => {
+      const v = input.value.trim();
+      if (v) update((d) => { d.habits.find((a) => a.id === h.id).name = v; });
+      editingId = null; rerender();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') { editingId = null; rerender(); } });
+    setTimeout(() => input.focus(), 0);
+    return el('div', { class: 'row' },
+      el('div', { class: 'row__main' }, input),
+      el('button', { class: 'btn btn--sm btn--primary', onClick: saveName }, 'Save'),
+      el('button', { class: 'btn btn--icon', onClick: () => { editingId = null; rerender(); } }, '×'));
+  }
 
   const meta = el('div', { class: 'row__meta' },
     cadenceLabel(h),
-    current > 0 ? el('span', { class: 'chip chip--streak' }, `🔥 ${current}`) : null,
+    current > 0 ? el('span', { class: 'chip chip--streak' + tier }, `🔥 ${current}`) : null,
     best > 0 ? el('span', { class: 'chip chip--best' }, `best ${best}`) : null,
     h.keystone ? el('span', { class: 'chip chip--key' }, 'non-negotiable') : null,
   );
@@ -89,6 +108,10 @@ function habitRow(h, rerender) {
       meta,
       el('div', { style: 'margin-top:7px' }, dotStrip(h)),
     ),
+    el('button', {
+      class: 'btn btn--icon', title: 'Rename (keeps your history)',
+      onClick: () => { editingId = h.id; rerender(); },
+    }, '✎'),
     el('button', {
       class: 'btn btn--icon', title: h.keystone ? 'Unmark non-negotiable' : 'Mark as non-negotiable',
       onClick: () => { update((d) => { const x = d.habits.find((a) => a.id === h.id); x.keystone = !x.keystone; }); rerender(); },

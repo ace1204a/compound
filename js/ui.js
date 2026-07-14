@@ -26,15 +26,24 @@ export function append(node, children) {
 
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
-/** Transient bottom toast message. */
+/** Transient bottom toast message. Optional action: { label, onClick }. */
 let toastTimer;
-export function toast(msg) {
+export function toast(msg, action) {
   const t = document.getElementById('toast');
   if (!t) return;
   t.textContent = msg;
+  if (action) {
+    t.append(el('button', { class: 'toast__btn', onClick: action.onClick }, action.label));
+  }
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action ? 8000 : 2200);
+}
+
+/** Parse 'HH:MM' to minutes since midnight (null if invalid). */
+export function timeToMin(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim());
+  return m ? Math.min(23, +m[1]) * 60 + Math.min(59, +m[2]) : null;
 }
 
 // ---------- Dates (all local, no timezone surprises) ----------

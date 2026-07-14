@@ -5,10 +5,11 @@
 // ============================================================
 
 import { getData, subscribe } from './store.js';
-import { el, clear, prettyDate, todayKey } from './ui.js';
+import { el, clear, prettyDate, todayKey, toast } from './ui.js';
 import * as sync from './sync.js';
 
 import today from './modules/today.js';
+import plan from './modules/plan.js';
 import habits from './modules/habits.js';
 import tasks from './modules/tasks.js';
 import goals from './modules/goals.js';
@@ -23,6 +24,7 @@ import settings from './modules/settings.js';
 // The order here is the order of the bottom tab bar.
 const MODULES = [
   { id: 'today',    label: 'Today',   icon: '◎', mod: today },
+  { id: 'plan',     label: 'Plan',    icon: '▤', mod: plan },
   { id: 'habits',   label: 'Habits',  icon: '✓', mod: habits },
   { id: 'tasks',    label: 'Tasks',   icon: '☰', mod: tasks },
   { id: 'goals',    label: 'Goals',   icon: '◆', mod: goals },
@@ -77,15 +79,19 @@ function renderView() {
   }
 }
 
-// ---- header (date + non-negotiables score) ----
+// ---- header (date + non-negotiables progress ring) ----
 function renderHeader() {
   document.getElementById('appDate').textContent = prettyDate();
   const d = getData();
   const keystones = d.habits.filter((h) => h.keystone);
   const done = keystones.filter((h) => h.log && h.log[todayKey()]).length;
-  const scoreBox = document.getElementById('appScore');
+  const pct = keystones.length ? (done / keystones.length) * 100 : 0;
+  const complete = keystones.length > 0 && done === keystones.length;
+  const ring = document.getElementById('appScore');
+  const color = complete ? 'var(--green)' : 'var(--gold)';
+  ring.style.background = `conic-gradient(${color} ${pct}%, var(--card-2) 0)`;
+  ring.classList.toggle('done', complete);
   document.getElementById('scoreNum').textContent = `${done}/${keystones.length}`;
-  scoreBox.classList.toggle('done', keystones.length > 0 && done === keystones.length);
 }
 
 function refresh() { renderHeader(); renderView(); }
@@ -99,9 +105,14 @@ refresh();
 // cloud sync (dormant until configured in Settings)
 sync.init().catch((err) => console.warn('Sync init skipped:', err.message));
 
-// offline + installability
+// offline + installability, with a visible "update ready" prompt so a new
+// version never silently hides behind the cache again
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW registration failed:', err));
+  });
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) toast('Compound has been updated', { label: 'Reload', onClick: () => location.reload() });
   });
 }

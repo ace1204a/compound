@@ -8,7 +8,7 @@
 
 import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
-const SYNC_MODULES = ['habits', 'tasks', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books'];
+const SYNC_MODULES = ['habits', 'tasks', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'plan'];
 const META_KEY = 'compound.sync.meta.v1';
 
 let client = null;

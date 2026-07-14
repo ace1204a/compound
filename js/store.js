@@ -43,6 +43,13 @@ function defaultData() {
       months: [],     // { id, month:'YYYY-MM', income, spend, saved }
     },
     books: [],        // { id, title, author, status:'want'|'reading'|'finished', notes, addedAt }
+    plan: {           // the living protocol — content arrives via plan patches, never hardcoded
+      updated: '',
+      note: '',
+      sleep: null,    // { phase, wake:'HH:MM', bed:'HH:MM' }
+      day: [],        // { id, time:'HH:MM', title, detail }
+      sections: [],   // { id, emoji, title, lines:[string] }
+    },
   };
 }
 
@@ -57,6 +64,7 @@ function migrate(saved) {
   merged.diet = { ...base.diet, ...(saved.diet || {}) };
   merged.trading = { ...base.trading, ...(saved.trading || {}) };
   merged.finance = { ...base.finance, ...(saved.finance || {}) };
+  merged.plan = { ...base.plan, ...(saved.plan || {}) };
   return merged;
 }
 

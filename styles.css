@@ -47,7 +47,8 @@ button { cursor: pointer; }
 #app {
   max-width: var(--maxw);
   margin: 0 auto;
-  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh; /* dynamic viewport: tracks iOS bars correctly */
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -83,7 +84,7 @@ button { cursor: pointer; }
 /* ---------- View / layout ---------- */
 .view {
   flex: 1;
-  padding: 6px 16px 120px;
+  padding: 6px 16px calc(130px + var(--safe-bottom));
   animation: fade .25s ease;
 }
 @keyframes fade { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: none; } }
@@ -203,11 +204,14 @@ input::placeholder, textarea::placeholder { color: var(--muted-2); }
 .banner--gold { border-color: var(--gold-dim); background: #201b0e; color: #f0dfb0; }
 
 /* ---------- Bottom tabs ---------- */
+/* Fixed (not sticky): pinned to the real bottom of the screen no matter
+   how short a page's content is — sticky rode up on iOS on short pages. */
 .tabs {
-  position: sticky; bottom: 0; z-index: 20;
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: var(--maxw); z-index: 20;
   display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
   padding: 8px 10px calc(8px + var(--safe-bottom));
-  background: linear-gradient(0deg, var(--bg) 70%, rgba(11,13,16,0));
+  background: var(--bg);
   border-top: 1px solid var(--line);
 }
 .tabs::-webkit-scrollbar { display: none; }

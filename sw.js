@@ -7,7 +7,7 @@
 // Bump VERSION on every deploy to invalidate old caches.
 // ============================================================
 
-const VERSION = 'compound-v4';
+const VERSION = 'compound-v5';
 const CORE = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const CORE = [
   './js/store.js',
   './js/ui.js',
   './js/sync.js',
+  './js/vendor/supabase.js',
   './js/modules/today.js',
   './js/modules/habits.js',
   './js/modules/tasks.js',

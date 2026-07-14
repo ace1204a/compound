@@ -45,6 +45,19 @@ function configured() {
   return !!(s && s.url && s.key);
 }
 
+/** Load the bundled supabase library (ships inside the app — no third-party
+ *  server involved, so it works offline-cached and can't randomly fail). */
+function loadLib() {
+  if (window.supabase) return Promise.resolve(window.supabase);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = './js/vendor/supabase.js';
+    s.onload = () => resolve(window.supabase);
+    s.onerror = () => reject(new Error('Could not load the sync library — try reopening the app'));
+    document.head.append(s);
+  });
+}
+
 async function ensureClient() {
   if (client) return client;
   if (!configured()) throw new Error('Sync not configured');
@@ -53,7 +66,7 @@ async function ensureClient() {
   if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(cleanUrl)) {
     throw new Error('That doesn’t look like a Supabase Project URL. It should read like https://abcdxyz.supabase.co');
   }
-  const lib = await import('https://esm.sh/@supabase/supabase-js@2');
+  const lib = await loadLib();
   client = lib.createClient(cleanUrl, (key || '').trim());
   return client;
 }
@@ -85,6 +98,18 @@ export async function currentUser() {
 }
 
 // ---------- sync decision (pure + testable) ----------
+/** JSON.stringify with object keys sorted (arrays keep order). Two objects
+ *  holding the same DATA always produce the same string, even if their keys
+ *  were created in a different order — otherwise devices ping-pong "changes"
+ *  that aren't real. */
+export function stableStringify(value) {
+  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
+  if (value && typeof value === 'object') {
+    return '{' + Object.keys(value).sort().map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
 // Given local data, the remote rows, and the snapshot of what we last
 // synced, decide what to pull and what to push. The one ironclad rule:
 // an EMPTY module never overwrites a non-empty one. That's what stops a
@@ -95,15 +120,15 @@ export function computeSyncActions(local, remote, snapshots) {
   const nextSnapshots = { ...snapshots };
 
   for (const mod of SYNC_MODULES) {
-    const localJson = JSON.stringify(local[mod]);
-    const emptyJson = JSON.stringify(emptyModule(mod));
+    const localJson = stableStringify(local[mod]);
+    const emptyJson = stableStringify(emptyModule(mod));
     const localIsEmpty = localJson === emptyJson;
     const snap = snapshots[mod];
     const localChanged = snap !== undefined && localJson !== snap;
 
     const r = remote[mod];
     const remoteExists = !!r;
-    const remoteJson = remoteExists ? JSON.stringify(r.data) : null;
+    const remoteJson = remoteExists ? stableStringify(r.data) : null;
     const remoteIsEmpty = remoteExists && remoteJson === emptyJson;
 
     let finalJson = localJson;

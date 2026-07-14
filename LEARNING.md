@@ -24,4 +24,32 @@ Your data is saved in the browser's own storage (**localStorage**) — no intern
 - To change anything, I just say it in plain English: "make the streak flame bigger", "add a sleep habit".
 
 ---
+
+## Lesson 2 — Real debugging: the £ bug (M2)
+
+**What happened:** the whole app went blank. Cause: Claude named a function `£` —
+and JavaScript doesn't allow £ as a name. One typo in one file killed everything,
+because all the files load as a chain.
+
+**The concept:** this is what debugging actually is — not guessing, but narrowing:
+1. Did the files arrive? (checked the network — all fine)
+2. Does each file parse? (tested them one by one — found `finance.js`, then `app.js` via caching)
+3. Fix, force a truly fresh reload, confirm.
+
+**One word to remember:** **narrow**. Bugs die when you cut the search space in half, repeatedly.
+
+---
+
+## Lesson 3 — Git: the save-game system (M3)
+
+**What we did:** `git init` then the first **commit** — a permanent snapshot of all 26 files.
+
+**The concept:** git is version control — every commit is a save point you can
+always return to. No more "final_v2_REAL.docx". **GitHub** is just a website that
+hosts your git snapshots online, which is also how the app gets to your phone.
+And `.gitignore` is the bouncer: `_mydata/` (your personal stuff) never gets in.
+
+**One word to remember:** **commit** = save point.
+
+---
 <!-- New lessons get added below as we go. -->

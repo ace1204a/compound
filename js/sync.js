@@ -15,6 +15,18 @@ let client = null;
 let status = { state: 'off', detail: '' }; // off | ready | signed-in | syncing | error
 const statusListeners = new Set();
 
+/** Clean a pasted Supabase URL down to just its origin (no trailing slash,
+ *  no path/query) — the #1 cause of "invalid path" sign-in errors. */
+export function normalizeUrl(raw) {
+  let u = (raw || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { return new URL(u).origin; } catch { return u.replace(/\/+$/, ''); }
+}
+
+/** Drop the cached client so a changed URL/key takes effect without reload. */
+export function resetClient() { client = null; }
+
 function setStatus(state, detail = '') {
   status = { state, detail };
   statusListeners.forEach((fn) => fn(status));
@@ -37,8 +49,12 @@ async function ensureClient() {
   if (client) return client;
   if (!configured()) throw new Error('Sync not configured');
   const { url, key } = getData().settings.supabase;
+  const cleanUrl = normalizeUrl(url);
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(cleanUrl)) {
+    throw new Error('That doesn’t look like a Supabase Project URL. It should read like https://abcdxyz.supabase.co');
+  }
   const lib = await import('https://esm.sh/@supabase/supabase-js@2');
-  client = lib.createClient(url, key);
+  client = lib.createClient(cleanUrl, (key || '').trim());
   return client;
 }
 

@@ -104,7 +104,9 @@ function syncCard(rerender) {
   const key = el('input', { type: 'text', placeholder: 'Supabase anon key', value: d.settings.supabase.key || '' });
   card.append(el('div', { class: 'stack' }, url, key,
     el('button', { class: 'btn btn--full', onClick: () => {
-      update((x) => { x.settings.supabase.url = url.value.trim(); x.settings.supabase.key = key.value.trim(); });
+      const clean = sync.normalizeUrl(url.value);
+      update((x) => { x.settings.supabase.url = clean; x.settings.supabase.key = key.value.trim(); });
+      sync.resetClient();
       toast('Saved — sign in below'); sync.init(); rerender();
     } }, 'Save connection')));
 

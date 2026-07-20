@@ -35,7 +35,8 @@ function defaultData() {
     },
     trading: {
       rules: [],      // { id, text }
-      log: {},        // 'YYYY-MM-DD' -> { followed:{ruleId:bool}, note }
+      log: {},        // 'YYYY-MM-DD' -> { followed:{ruleId:bool}, note, review, tomorrow }
+      accounts: null, // { balance, buffer, updatedAt }
     },
     inbox: [],        // { id, url, note, category, status:'new'|'reviewed'|'adopted'|'rejected', verdict, createdAt }
     finance: {

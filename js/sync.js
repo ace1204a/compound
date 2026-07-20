@@ -110,6 +110,58 @@ export function stableStringify(value) {
   return JSON.stringify(value);
 }
 
+// ---------- module merges ----------
+// When BOTH devices changed the same module since the last sync, last-write-
+// wins would silently drop one side's ticks. For the daily-log modules we
+// MERGE instead: unions of dates/ticks, newer-timestamp wins on single slots.
+// (Known tradeoff: an item deleted on one device while edited on the other
+// can come back — acceptable for a one-person, two-device system.)
+export const MERGERS = {
+  habits(local, remote) {
+    const byId = new Map(remote.map((h) => [h.id, h]));
+    const out = local.map((l) => {
+      const r = byId.get(l.id);
+      if (!r) return l;
+      byId.delete(l.id);
+      return { ...r, ...l, log: { ...(r.log || {}), ...(l.log || {}) } };
+    });
+    return [...out, ...byId.values()];
+  },
+  checkins(local, remote) {
+    const out = { ...remote };
+    for (const [k, v] of Object.entries(local)) {
+      const rv = out[k];
+      out[k] = !rv || (v.updatedAt || '') >= (rv.updatedAt || '') ? v : rv;
+    }
+    return out;
+  },
+  diet(local, remote) {
+    const log = { ...(remote.log || {}) };
+    for (const [date, ticks] of Object.entries(local.log || {})) log[date] = { ...(log[date] || {}), ...ticks };
+    const w = new Map((remote.weights || []).map((x) => [x.date, x]));
+    for (const x of (local.weights || [])) w.set(x.date, x);
+    return {
+      ...remote, ...local, log,
+      weights: [...w.values()].sort((a, b) => a.date.localeCompare(b.date)),
+      checklist: (local.checklist && local.checklist.length) ? local.checklist : remote.checklist,
+    };
+  },
+  trading(local, remote) {
+    const log = { ...(remote.log || {}) };
+    for (const [date, s] of Object.entries(local.log || {})) {
+      const r = log[date];
+      log[date] = !r ? s : {
+        ...r, ...s,
+        followed: { ...(r.followed || {}), ...(s.followed || {}) },
+        note: s.note || r.note, review: s.review || r.review, tomorrow: s.tomorrow || r.tomorrow,
+      };
+    }
+    const accounts = (local.accounts && (!remote.accounts || (local.accounts.updatedAt || '') >= (remote.accounts.updatedAt || '')))
+      ? local.accounts : remote.accounts;
+    return { ...remote, ...local, log, accounts, rules: (local.rules && local.rules.length) ? local.rules : remote.rules };
+  },
+};
+
 // Given local data, the remote rows, and the snapshot of what we last
 // synced, decide what to pull and what to push. The one ironclad rule:
 // an EMPTY module never overwrites a non-empty one. That's what stops a
@@ -130,9 +182,16 @@ export function computeSyncActions(local, remote, snapshots) {
     const remoteExists = !!r;
     const remoteJson = remoteExists ? stableStringify(r.data) : null;
     const remoteIsEmpty = remoteExists && remoteJson === emptyJson;
+    // remote truly changed since OUR last sync (not just "differs from local")
+    const remoteChanged = snap !== undefined && remoteExists && remoteJson !== snap;
 
     let finalJson = localJson;
-    if (localChanged && !localIsEmpty) {
+    if (localChanged && remoteChanged && !localIsEmpty && !remoteIsEmpty && MERGERS[mod]) {
+      const merged = MERGERS[mod](local[mod], r.data);    // both sides edited → union, lose nothing
+      pulls[mod] = merged;
+      pushes.push(mod);
+      finalJson = stableStringify(merged);
+    } else if (localChanged && !localIsEmpty) {
       pushes.push(mod);                                   // I made real edits here
     } else if (!localIsEmpty && (!remoteExists || remoteIsEmpty)) {
       pushes.push(mod);                                   // I have data, cloud doesn't → seed it
@@ -189,6 +248,7 @@ export async function syncNow() {
 
 // ---------- auto-sync ----------
 let debounceTimer = null;
+let wired = false;
 export async function init() {
   if (!configured()) { setStatus('off'); return; }
   setStatus('ready');
@@ -197,11 +257,21 @@ export async function init() {
     setStatus('signed-in');
     syncNow();
   }
+  if (wired) return;
+  wired = true;
+
+  // after any local change (debounced)
   subscribe(() => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
       if (navigator.onLine && (await currentUser())) syncNow();
     }, 4000);
   });
+  // coming back online
   window.addEventListener('online', () => syncNow());
+  // reopening the app / switching back to it (the iOS "stale until touched" fix)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncNow(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) syncNow(); });
+  // heartbeat while the app is open
+  setInterval(() => { if (!document.hidden && navigator.onLine) syncNow(); }, 5 * 60 * 1000);
 }

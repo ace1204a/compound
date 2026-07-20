@@ -77,6 +77,9 @@ function buildBrief() {
 
   if (d.diet.checklist.length) lines.push(`DIET: clean-day streak ${cleanStreak(d)}`);
   if (d.trading.rules.length) lines.push(`TRADING: ${cleanRun(d)} clean sessions in a row (${Object.keys(d.trading.log).length} logged)`);
+  if (d.trading.accounts) lines.push(`ACCOUNTS: balance ${d.trading.accounts.balance} · buffer ${d.trading.accounts.buffer}`);
+  const lastTradeDay = Object.keys(d.trading.log).sort().pop();
+  if (lastTradeDay && d.trading.log[lastTradeDay].tomorrow) lines.push(`NEXT SESSION PLAN (${lastTradeDay}): ${d.trading.log[lastTradeDay].tomorrow}`);
   if (d.gym.sessions.length) lines.push(`GYM: ${d.gym.sessions.length} workouts logged, last ${d.gym.sessions[0].date} (${d.gym.sessions[0].name})`);
   const debtNow = d.finance.debts.reduce((n, x) => n + (+x.balance || 0), 0);
   const debtStart = d.finance.debts.reduce((n, x) => n + (+x.start || 0), 0);
@@ -182,7 +185,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.3 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.4 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

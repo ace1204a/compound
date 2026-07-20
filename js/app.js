@@ -105,6 +105,14 @@ refresh();
 // cloud sync (dormant until configured in Settings)
 sync.init().catch((err) => console.warn('Sync init skipped:', err.message));
 
+// header sync dot: grey = off · gold pulse = syncing · green = synced · red = problem
+sync.onStatus((s) => {
+  const dot = document.getElementById('syncDot');
+  if (!dot) return;
+  dot.className = 'syncdot ' + ({ off: '', ready: 'syncdot--warn', 'signed-in': 'syncdot--ok', syncing: 'syncdot--syncing', error: 'syncdot--err' }[s.state] || '');
+  dot.title = 'Cloud sync: ' + (s.detail || s.state);
+});
+
 // offline + installability, with a visible "update ready" prompt so a new
 // version never silently hides behind the cache again
 if ('serviceWorker' in navigator) {

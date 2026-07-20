@@ -62,11 +62,48 @@ function todayCard(rerender) {
   note.addEventListener('change', () => update((x) => { const t = x.trading.log[key] = x.trading.log[key] || { followed: {}, note: '' }; t.note = note.value; }));
   card.append(el('div', { style: 'margin-top:10px' }, note));
 
+  // the daily loop: review today, plan tomorrow — done at the 21:00 block
+  const review = el('textarea', { placeholder: '21:00 review — every trade journaled? What actually happened, what to fix…' });
+  review.value = (day && day.review) || '';
+  review.addEventListener('change', () => { update((x) => { const t = x.trading.log[key] = x.trading.log[key] || { followed: {}, note: '' }; t.review = review.value.trim(); }); toast('Review saved'); });
+  const tomorrow = el('textarea', { placeholder: 'Tomorrow — bias, levels, which A-setups you’ll wait for…' });
+  tomorrow.value = (day && day.tomorrow) || '';
+  tomorrow.addEventListener('change', () => { update((x) => { const t = x.trading.log[key] = x.trading.log[key] || { followed: {}, note: '' }; t.tomorrow = tomorrow.value.trim(); }); toast('Tomorrow’s plan saved'); });
+  card.append(
+    el('div', { class: 'field', style: 'margin-top:10px' }, el('span', {}, 'Daily review'), review),
+    el('div', { class: 'field' }, el('span', {}, 'Tomorrow’s outlook'), tomorrow));
+
   if (day && isClean(d, key)) {
     card.append(el('div', { class: 'banner', style: 'margin-top:10px;margin-bottom:0' }, '✅ Clean session. This is the payout that matters — the streak IS the edge.'));
   } else if (day && Object.keys(day.followed || {}).length > 0 && !isClean(d, key)) {
     card.append(el('div', { class: 'banner banner--warn', style: 'margin-top:10px;margin-bottom:0' }, 'Rules broken = logged honestly. That’s worth more than a green day. Tomorrow: clean.'));
   }
+  return card;
+}
+
+function accountsCard(rerender) {
+  const d = getData();
+  const a = d.trading.accounts;
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'card__head' },
+    el('div', { class: 'card__title' }, '💼 Accounts'),
+    a && a.updatedAt ? el('span', { class: 'card__sub' }, 'updated ' + a.updatedAt.slice(0, 10)) : el('span', { class: 'card__sub' }, 'week-level view')));
+
+  if (a) {
+    card.append(el('div', { class: 'rowflex', style: 'gap:24px;margin:4px 0 10px' },
+      el('div', {}, el('div', { class: 'card__sub' }, 'Balance vs start'), el('div', { class: 'big-num ' + (+a.balance >= 0 ? 'pos' : 'neg') }, (+a.balance >= 0 ? '+' : '') + (+a.balance).toLocaleString('en-GB'))),
+      el('div', {}, el('div', { class: 'card__sub' }, 'Buffer to max loss'), el('div', { class: 'big-num', style: 'color:var(--gold)' }, (+a.buffer).toLocaleString('en-GB')))));
+  }
+
+  const balance = el('input', { type: 'number', placeholder: 'balance +/-', step: '0.01', inputmode: 'decimal', value: a ? a.balance : '' });
+  const buffer = el('input', { type: 'number', placeholder: 'buffer to blown', step: '0.01', inputmode: 'decimal', value: a ? a.buffer : '' });
+  card.append(el('div', { class: 'rowflex' }, balance, buffer,
+    el('button', { class: 'btn', onClick: () => {
+      if (balance.value === '' || buffer.value === '') { toast('Both numbers'); return; }
+      update((x) => { x.trading.accounts = { balance: +balance.value, buffer: +buffer.value, updatedAt: new Date().toISOString() }; });
+      toast('Accounts updated'); rerender();
+    } }, 'Save')));
+  card.append(el('div', { class: 'hint' }, 'Update after each session. The buffer is the number that keeps you honest — it shrinks, you size down.'));
   return card;
 }
 
@@ -104,7 +141,9 @@ function historyCard(rerender) {
       el('span', { class: 'chip ' + (clean ? 'chip--key' : ''), style: clean ? '' : 'color:var(--red);border-color:var(--red-dim)' }, clean ? 'clean' : 'broke rules'),
       el('div', { class: 'row__main' },
         el('div', { class: 'row__name' }, k),
-        day.note ? el('div', { class: 'row__meta' }, day.note) : null),
+        day.note ? el('div', { class: 'row__meta' }, day.note) : null,
+        day.review ? el('div', { class: 'row__meta' }, '📝 ' + day.review.slice(0, 90)) : null,
+        day.tomorrow ? el('div', { class: 'row__meta' }, '🎯 ' + day.tomorrow.slice(0, 90)) : null),
       el('button', { class: 'btn btn--icon', onClick: () => { if (confirmAction('Delete this session log?')) { update((x) => { delete x.trading.log[k]; }); rerender(); } } }, '×')));
   });
   return card;
@@ -117,6 +156,8 @@ function render(view) {
   view.append(el('div', { class: 'banner banner--gold' },
     'This page doesn’t care about P&L. It cares about one thing: did you follow your own plan? Protect the skill from the gamble.'));
   view.append(todayCard(rerender));
+  view.append(el('div', { class: 'section-title' }, 'Accounts'));
+  view.append(accountsCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Rules'));
   view.append(rulesCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Session history'));

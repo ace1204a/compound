@@ -10,7 +10,7 @@ import { getData, update } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays } from '../ui.js';
 import { computeStreaks, isDoneToday, toggleToday, weekCount } from './habits.js';
 import { toggleTask } from './tasks.js';
-import { nowAndNext } from './plan.js';
+import { nowAndNext, dayProgress, isBlockDone, toggleBlock } from './plan.js';
 
 const LINES = [
   'Small reps, compounded.',
@@ -50,24 +50,32 @@ function hero() {
       el('span', { class: 'chip' }, `⏰ wake ${sleep.wake}`)) : null);
 }
 
-// ---------- NOW / NEXT ----------
-function nowCard() {
-  const { current, next } = nowAndNext(getData().plan.day);
+// ---------- NOW / NEXT (with a tick, and today's progress) ----------
+function nowCard(rerender) {
+  const d = getData();
+  const { current, next } = nowAndNext(d.plan.day);
   if (!current && !next) return null;
+  const { done, total } = dayProgress(d);
 
-  const card = el('div', { class: 'card nowcard', onClick: () => { location.hash = '/plan'; }, style: 'cursor:pointer' });
+  const card = el('div', { class: 'card nowcard' });
   if (current) {
-    card.append(
-      el('div', { class: 'nowcard__label' }, `NOW · since ${current.time}`),
-      el('div', { class: 'nowcard__title' }, current.title),
-      current.detail ? el('div', { class: 'card__sub' }, current.detail) : null);
+    const ticked = isBlockDone(d, current.id);
+    card.append(el('div', { class: 'rowflex', style: 'align-items:flex-start' },
+      el('button', { class: 'check check--gold' + (ticked ? ' on' : ''), 'aria-label': 'Tick this block', onClick: () => { toggleBlock(current.id); rerender(); } }),
+      el('div', { class: 'row__main' },
+        el('div', { class: 'nowcard__label' }, `NOW · since ${current.time}`),
+        el('div', { class: 'nowcard__title' }, current.title),
+        current.detail ? el('div', { class: 'card__sub' }, current.detail) : null)));
   } else {
     card.append(el('div', { class: 'nowcard__label' }, 'DAY NOT STARTED'));
   }
-  if (next) {
-    card.append(el('div', { class: 'nowcard__next' },
-      `Next → ${next.time} · ${next.title}${next.tomorrow ? ' (tomorrow)' : ''}`));
+  if (total) {
+    card.append(el('div', { class: 'progress', style: 'margin-top:12px' }, el('div', { class: 'progress__fill', style: `width:${(done / total) * 100}%` })));
   }
+  card.append(el('div', { class: 'nowcard__next', onClick: () => { location.hash = '/plan'; }, style: 'cursor:pointer' },
+    next ? `Next → ${next.time} · ${next.title}${next.tomorrow ? ' (tomorrow)' : ''}` : 'Plan complete',
+    total ? el('span', { class: 'spacer' }) : null,
+    total ? el('span', { class: 'chip' + (done === total ? ' chip--key' : '') }, `${done}/${total} today`) : null));
   return card;
 }
 
@@ -157,7 +165,7 @@ function render(view) {
 
   view.append(hero());
 
-  const nc = nowCard();
+  const nc = nowCard(rerender);
   if (nc) view.append(nc);
 
   // Non-negotiables (never-zero)

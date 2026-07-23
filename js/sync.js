@@ -146,6 +146,52 @@ export const MERGERS = {
       checklist: (local.checklist && local.checklist.length) ? local.checklist : remote.checklist,
     };
   },
+  plan(local, remote) {
+    // schedule/sections: whichever side was edited last wins (they change rarely);
+    // the daily tick-offs always union so no device loses a checked block.
+    const done = { ...(remote.done || {}) };
+    for (const [date, blocks] of Object.entries(local.done || {})) done[date] = { ...(done[date] || {}), ...blocks };
+    const localNewer = (local.updated || '') >= (remote.updated || '');
+    const base = localNewer ? { ...remote, ...local } : { ...local, ...remote };
+    return { ...base, done };
+  },
+  gym(local, remote) {
+    const byId = (arr) => new Map((arr || []).map((x) => [x.id, x]));
+    const sessions = byId(remote.sessions); for (const s of (local.sessions || [])) sessions.set(s.id, s);
+    const cardio = byId(remote.cardio); for (const c of (local.cardio || [])) cardio.set(c.id, c);
+    const templates = (local.templates && local.templates.length >= (remote.templates || []).length) ? local.templates : remote.templates;
+    return {
+      ...remote, ...local, templates,
+      sessions: [...sessions.values()].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+      cardio: [...cardio.values()].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+      draft: local.draft || remote.draft,
+    };
+  },
+  books(local, remote) {
+    const byId = new Map((remote || []).map((b) => [b.id, b]));
+    const out = (local || []).map((l) => {
+      const r = byId.get(l.id);
+      if (!r) return l;
+      byId.delete(l.id);
+      const seen = new Set();
+      const sessions = [...(r.sessions || []), ...(l.sessions || [])].filter((s) => {
+        const k = s.date + ':' + s.pages; if (seen.has(k)) return false; seen.add(k); return true;
+      });
+      const hi = new Map([...(r.highlights || []), ...(l.highlights || [])].map((h) => [h.id, h]));
+      return { ...r, ...l, sessions, highlights: [...hi.values()], notes: l.notes || r.notes };
+    });
+    return [...out, ...byId.values()];
+  },
+  inbox(local, remote) {
+    const byId = new Map((remote || []).map((i) => [i.id, i]));
+    const out = (local || []).map((l) => {
+      const r = byId.get(l.id);
+      if (!r) return l;
+      byId.delete(l.id);
+      return { ...r, ...l, verdict: l.verdict || r.verdict, myNotes: l.myNotes || r.myNotes, score: l.score || r.score };
+    });
+    return [...out, ...byId.values()];
+  },
   trading(local, remote) {
     const log = { ...(remote.log || {}) };
     for (const [date, s] of Object.entries(local.log || {})) {

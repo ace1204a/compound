@@ -75,6 +75,16 @@ function buildBrief() {
     lines.push('');
   }
 
+  const planTotal = (d.plan.day || []).length;
+  if (planTotal) {
+    const last5 = Array.from({ length: 5 }, (_, i) => addDays(todayKey(), i - 4));
+    lines.push('PLAN ADHERENCE (last 5 days):');
+    last5.forEach((k) => {
+      const done = (d.plan.day || []).filter((b) => d.plan.done && d.plan.done[k] && d.plan.done[k][b.id]).length;
+      lines.push(`- ${k}: ${done}/${planTotal} blocks`);
+    });
+    lines.push('');
+  }
   if (d.diet.checklist.length) lines.push(`DIET: clean-day streak ${cleanStreak(d)}`);
   if (d.trading.rules.length) lines.push(`TRADING: ${cleanRun(d)} clean sessions in a row (${Object.keys(d.trading.log).length} logged)`);
   if (d.trading.accounts) lines.push(`ACCOUNTS: balance ${d.trading.accounts.balance} · buffer ${d.trading.accounts.buffer}`);
@@ -85,7 +95,16 @@ function buildBrief() {
   const debtStart = d.finance.debts.reduce((n, x) => n + (+x.start || 0), 0);
   if (debtStart) lines.push(`MONEY: debt £${debtNow.toLocaleString('en-GB')} (started £${debtStart.toLocaleString('en-GB')})`);
   const weights = d.diet.weights;
-  if (weights.length) lines.push(`WEIGHT: ${weights[weights.length - 1].kg} kg (${weights.length} entries)`);
+  if (weights.length) {
+    const w = weights[weights.length - 1];
+    lines.push(`WEIGHT: ${w.kg} kg${w.bf ? ` @ ${w.bf}% bf` : ''} (${weights.length} entries)`);
+  }
+  if ((d.gym.cardio || []).length) {
+    const c = d.gym.cardio[0];
+    lines.push(`CARDIO: last ${c.type} ${c.distance ? c.distance + 'km ' : ''}${c.minutes}min on ${c.date} (${d.gym.cardio.length} logged)`);
+  }
+  const reading = d.books.find((b) => b.status === 'reading');
+  if (reading) lines.push(`READING: ${reading.title} — ${(reading.sessions || []).reduce((n, s) => n + (+s.pages || 0), 0)} pages, ${(reading.highlights || []).length} highlights`);
   const newInbox = d.inbox.filter((i) => i.status === 'new').length;
   if (newInbox) lines.push(`INBOX: ${newInbox} items waiting for review`);
 
@@ -185,7 +204,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.4 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.5 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

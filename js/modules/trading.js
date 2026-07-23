@@ -7,7 +7,16 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, confirmAction } from '../ui.js';
+import { el, toast, todayKey, addDays, keyToDate, confirmAction } from '../ui.js';
+
+/** Number input that ACCEPTS A MINUS SIGN on phones (iOS number pads hide it). */
+function numInput(props = {}) {
+  return el('input', { type: 'text', inputmode: 'text', autocomplete: 'off', spellcheck: 'false', ...props });
+}
+function parseNum(v) {
+  const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
 
 function sessionDates(d) {
   return Object.keys(d.trading.log).sort(); // ascending
@@ -58,6 +67,15 @@ function todayCard(rerender) {
       el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, r.text))));
   });
 
+  // day P&L (minus sign works)
+  const pnl = numInput({ placeholder: 'today’s P&L e.g. -100', value: (day && day.pnl !== undefined && day.pnl !== null) ? day.pnl : '' });
+  pnl.addEventListener('change', () => {
+    const v = parseNum(pnl.value);
+    update((x) => { const t = x.trading.log[key] = x.trading.log[key] || { followed: {}, note: '' }; t.pnl = v; });
+    toast('P&L logged'); rerender();
+  });
+  card.append(el('div', { class: 'field', style: 'margin-top:10px' }, el('span', {}, 'P&L (the score, not the point)'), pnl));
+
   const note = el('input', { type: 'text', placeholder: 'Note — what happened, how you felt', value: (day && day.note) || '', maxlength: '200' });
   note.addEventListener('change', () => update((x) => { const t = x.trading.log[key] = x.trading.log[key] || { followed: {}, note: '' }; t.note = note.value; }));
   card.append(el('div', { style: 'margin-top:10px' }, note));
@@ -95,12 +113,13 @@ function accountsCard(rerender) {
       el('div', {}, el('div', { class: 'card__sub' }, 'Buffer to max loss'), el('div', { class: 'big-num', style: 'color:var(--gold)' }, (+a.buffer).toLocaleString('en-GB')))));
   }
 
-  const balance = el('input', { type: 'number', placeholder: 'balance +/-', step: '0.01', inputmode: 'decimal', value: a ? a.balance : '' });
-  const buffer = el('input', { type: 'number', placeholder: 'buffer to blown', step: '0.01', inputmode: 'decimal', value: a ? a.buffer : '' });
+  const balance = numInput({ placeholder: 'balance e.g. -191.90', value: a ? a.balance : '' });
+  const buffer = numInput({ placeholder: 'buffer to blown', value: a ? a.buffer : '' });
   card.append(el('div', { class: 'rowflex' }, balance, buffer,
     el('button', { class: 'btn', onClick: () => {
-      if (balance.value === '' || buffer.value === '') { toast('Both numbers'); return; }
-      update((x) => { x.trading.accounts = { balance: +balance.value, buffer: +buffer.value, updatedAt: new Date().toISOString() }; });
+      const b = parseNum(balance.value), f = parseNum(buffer.value);
+      if (b === null || f === null) { toast('Both numbers (minus sign allowed)'); return; }
+      update((x) => { x.trading.accounts = { balance: b, buffer: f, updatedAt: new Date().toISOString() }; });
       toast('Accounts updated'); rerender();
     } }, 'Save')));
   card.append(el('div', { class: 'hint' }, 'Update after each session. The buffer is the number that keeps you honest — it shrinks, you size down.'));
@@ -126,6 +145,56 @@ function rulesCard(rerender) {
       update((x) => { x.trading.rules.push({ id: uid(), text: v }); });
       input.value = ''; rerender();
     } }, 'Add')));
+  return card;
+}
+
+// Month grid: colour = rules followed (green/red), number = P&L.
+// Toggle shows P&L view or discipline view — same grid, two lenses.
+let calMode = 'rules';
+function calendarCard(rerender) {
+  const d = getData();
+  const card = el('div', { class: 'card' });
+  const seg = el('div', { class: 'seg' },
+    el('button', { class: calMode === 'rules' ? 'on' : '', onClick: () => { calMode = 'rules'; rerender(); } }, 'Discipline'),
+    el('button', { class: calMode === 'pnl' ? 'on' : '', onClick: () => { calMode = 'pnl'; rerender(); } }, 'P&L'));
+  card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, '🗓 This month'), seg));
+
+  const today = keyToDate(todayKey());
+  const year = today.getFullYear(), month = today.getMonth();
+  const first = new Date(year, month, 1);
+  const startPad = (first.getDay() + 6) % 7; // Monday-first
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const grid = el('div', { class: 'cal' });
+  ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((n) => grid.append(el('div', { class: 'cal__dow' }, n)));
+  for (let i = 0; i < startPad; i++) grid.append(el('div', {}));
+
+  let monthPnl = 0, cleanDays = 0, logged = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const k = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const entry = d.trading.log[k];
+    let cls = 'cal__cell';
+    let label = String(day);
+    if (entry) {
+      logged++;
+      const clean = isClean(d, k);
+      if (clean) cleanDays++;
+      if (calMode === 'rules') {
+        cls += clean ? ' cal__cell--good' : ' cal__cell--bad';
+      } else if (entry.pnl !== undefined && entry.pnl !== null) {
+        monthPnl += entry.pnl;
+        cls += entry.pnl > 0 ? ' cal__cell--good' : entry.pnl < 0 ? ' cal__cell--bad' : '';
+        label = (entry.pnl > 0 ? '+' : '') + Math.round(entry.pnl);
+      } else {
+        cls += ' cal__cell--logged';
+      }
+    }
+    if (k === todayKey()) cls += ' cal__cell--today';
+    grid.append(el('div', { class: cls, title: k }, label));
+  }
+  card.append(grid);
+  card.append(el('div', { class: 'hint' },
+    `${logged} sessions logged · ${cleanDays} clean` + (calMode === 'pnl' ? ` · month P&L ${monthPnl >= 0 ? '+' : ''}${Math.round(monthPnl)}` : '')));
   return card;
 }
 
@@ -160,6 +229,8 @@ function render(view) {
   view.append(accountsCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Rules'));
   view.append(rulesCard(rerender));
+  view.append(el('div', { class: 'section-title' }, 'Calendar'));
+  view.append(calendarCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Session history'));
   view.append(historyCard(rerender));
 }

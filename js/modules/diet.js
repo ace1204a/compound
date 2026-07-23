@@ -99,16 +99,33 @@ function weightCard(rerender) {
     card.append(el('div', { class: 'hint' }, `${weights.length} entries · ${diff > 0 ? '+' : ''}${diff} kg since ${weights[0].date}`));
   }
 
-  const kg = el('input', { type: 'number', placeholder: 'kg today', step: '0.1', min: '0', inputmode: 'decimal' });
-  card.append(el('div', { class: 'inline-form', style: 'margin-top:10px' }, kg,
+  const kg = el('input', { type: 'number', placeholder: 'kg', step: '0.1', min: '0', inputmode: 'decimal' });
+  const bf = el('input', { type: 'number', placeholder: 'body fat %', step: '0.1', min: '0', inputmode: 'decimal' });
+  card.append(el('div', { class: 'rowflex', style: 'margin-top:10px' }, kg, bf,
     el('button', { class: 'btn btn--primary', onClick: () => {
       const v = +kg.value; if (!v) { toast('Enter your weight'); return; }
       update((x) => {
         x.diet.weights = x.diet.weights.filter((a) => a.date !== todayKey());
-        x.diet.weights.push({ date: todayKey(), kg: v });
+        x.diet.weights.push({ date: todayKey(), kg: v, bf: +bf.value || null });
       });
-      kg.value = ''; toast('Logged'); rerender();
+      kg.value = ''; bf.value = ''; toast('Logged'); rerender();
     } }, 'Log')));
+
+  // lean mass: the number that actually tells you if the cut is working
+  const withBf = weights.filter((w) => w.bf);
+  if (withBf.length) {
+    const l = withBf[withBf.length - 1];
+    const lean = (l.kg * (1 - l.bf / 100)).toFixed(1);
+    card.append(el('div', { class: 'row__meta', style: 'margin-top:10px' },
+      el('span', { class: 'chip' }, `${l.bf}% body fat`),
+      el('span', { class: 'chip chip--key' }, `${lean}kg lean mass`)));
+    if (withBf.length > 1) {
+      const f = withBf[0];
+      const leanFirst = f.kg * (1 - f.bf / 100);
+      const dLean = (+lean - leanFirst).toFixed(1);
+      card.append(el('div', { class: 'hint' }, `lean mass ${dLean >= 0 ? '+' : ''}${dLean}kg since ${f.date} — holding lean mass while weight drops = the cut is working`));
+    }
+  }
   return card;
 }
 

@@ -26,30 +26,32 @@ function defaultData() {
     gym: {
       templates: [],  // { id, name, exercises:[names] }
       sessions: [],   // { id, date, name, entries:[{ exercise, sets:[{kg,reps}] }], notes }
+      cardio: [],     // { id, date, type, distance, minutes, notes }
       draft: null,    // in-progress workout, survives tab switches
     },
     diet: {
       checklist: [],  // { id, name }
       log: {},        // 'YYYY-MM-DD' -> { ruleId: true }
-      weights: [],    // { date, kg }
+      weights: [],    // { date, kg, bf }
     },
     trading: {
       rules: [],      // { id, text }
       log: {},        // 'YYYY-MM-DD' -> { followed:{ruleId:bool}, note, review, tomorrow }
       accounts: null, // { balance, buffer, updatedAt }
     },
-    inbox: [],        // { id, url, note, category, status:'new'|'reviewed'|'adopted'|'rejected', verdict, createdAt }
+    inbox: [],        // { id, url, note, area, status, verdict, score, myNotes, createdAt }
     finance: {
       debts: [],      // { id, name, start, balance, priority }
       months: [],     // { id, month:'YYYY-MM', income, spend, saved }
     },
-    books: [],        // { id, title, author, status:'want'|'reading'|'finished', notes, addedAt }
+    books: [],        // { id, title, author, status, notes, highlights:[], sessions:[{date,pages}], addedAt }
     plan: {           // the living protocol — content arrives via plan patches, never hardcoded
       updated: '',
       note: '',
       sleep: null,    // { phase, wake:'HH:MM', bed:'HH:MM' }
       day: [],        // { id, time:'HH:MM', title, detail }
       sections: [],   // { id, emoji, title, lines:[string] }
+      done: {},       // 'YYYY-MM-DD' -> { blockId: true }  — ticking off the day as you go
     },
   };
 }

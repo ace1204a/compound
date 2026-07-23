@@ -1,12 +1,12 @@
 // ============================================================
 // Plan — the living protocol, inside the app.
-// Content is DATA (synced, private), never hardcoded here:
-// it arrives via plan patches imported in Settings, and small
-// edits can be made right on this page.
+// Content is DATA (synced, private), never hardcoded here.
+// Every block can be TICKED as you move through the day, so
+// the plan is a checklist you walk down, not a poster.
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, timeToMin, confirmAction } from '../ui.js';
+import { el, toast, timeToMin, todayKey, addDays, confirmAction } from '../ui.js';
 
 /** Which schedule block are we in right now? Returns { current, next }. */
 export function nowAndNext(day) {
@@ -22,6 +22,37 @@ export function nowAndNext(day) {
   return { current, next };
 }
 
+export function isBlockDone(d, blockId, key = todayKey()) {
+  return !!(d.plan.done && d.plan.done[key] && d.plan.done[key][blockId]);
+}
+
+export function toggleBlock(blockId, key = todayKey()) {
+  update((d) => {
+    d.plan.done = d.plan.done || {};
+    const day = d.plan.done[key] = d.plan.done[key] || {};
+    if (day[blockId]) delete day[blockId]; else day[blockId] = true;
+  });
+}
+
+/** How much of today's plan is ticked. */
+export function dayProgress(d, key = todayKey()) {
+  const total = (d.plan.day || []).length;
+  const done = (d.plan.day || []).filter((b) => isBlockDone(d, b.id, key)).length;
+  return { done, total };
+}
+
+/** Streak of days where at least 70% of the plan was ticked. */
+export function planStreak(d) {
+  const total = (d.plan.day || []).length;
+  if (!total) return 0;
+  let cursor = todayKey();
+  const hit = (k) => dayProgress(d, k).done / total >= 0.7;
+  if (!hit(cursor)) cursor = addDays(cursor, -1);
+  let n = 0;
+  while (hit(cursor)) { n++; cursor = addDays(cursor, -1); }
+  return n;
+}
+
 function sleepCard(plan) {
   if (!plan.sleep) return null;
   return el('div', { class: 'card card--accent' },
@@ -34,36 +65,52 @@ function sleepCard(plan) {
 }
 
 function scheduleCard(plan, rerender) {
+  const d = getData();
+  const { done, total } = dayProgress(d);
+  const streak = planStreak(d);
+
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'card__head' },
-    el('div', { class: 'card__title' }, '📋 The day, hour by hour'),
-    el('span', { class: 'card__sub' }, 'gold = you are here')));
+    el('div', { class: 'card__title' }, '📋 Today, step by step'),
+    el('div', { class: 'rowflex' },
+      streak > 0 ? el('span', { class: 'chip chip--streak' }, `🔥 ${streak}d`) : null,
+      el('span', { class: 'chip' + (total && done === total ? ' chip--key' : '') }, `${done}/${total}`))));
+
+  if (total) {
+    const pct = (done / total) * 100;
+    card.append(el('div', { class: 'progress' }, el('div', { class: 'progress__fill', style: `width:${pct}%` })));
+  }
 
   const { current } = nowAndNext(plan.day);
   const blocks = [...plan.day].sort((a, b) => (timeToMin(a.time) ?? 0) - (timeToMin(b.time) ?? 0));
 
   blocks.forEach((b) => {
     const isNow = current && b.id === current.id;
-    card.append(el('div', { class: 'block' + (isNow ? ' block--now' : '') },
+    const ticked = isBlockDone(d, b.id);
+    card.append(el('div', { class: 'block' + (isNow ? ' block--now' : '') + (ticked ? ' block--done' : '') },
+      el('button', {
+        class: 'check check--sm' + (ticked ? ' on' : ''), 'aria-label': 'Tick ' + b.title,
+        onClick: () => { toggleBlock(b.id); rerender(); },
+      }),
       el('div', { class: 'block__time' }, b.time),
       el('div', { class: 'block__main' },
-        el('div', { class: 'block__title' }, (isNow ? '▶ ' : '') + b.title),
+        el('div', { class: 'block__title' }, (isNow && !ticked ? '▶ ' : '') + b.title),
         b.detail ? el('div', { class: 'block__detail' }, b.detail) : null),
-      el('button', { class: 'btn btn--icon', title: 'Remove block', onClick: () => { if (confirmAction(`Remove "${b.title}"?`)) { update((d) => { d.plan.day = d.plan.day.filter((x) => x.id !== b.id); }); rerender(); } } }, '×')));
+      el('button', { class: 'btn btn--icon', title: 'Remove block', onClick: () => { if (confirmAction(`Remove "${b.title}"?`)) { update((x) => { x.plan.day = x.plan.day.filter((y) => y.id !== b.id); }); rerender(); } } }, '×')));
   });
   if (!blocks.length) card.append(el('div', { class: 'empty muted' }, 'No schedule yet — add blocks below or import a plan patch in Settings.'));
 
   // add a block
-  const time = el('input', { type: 'text', placeholder: '08:00', maxlength: '5', style: 'max-width:86px' });
+  const time = el('input', { type: 'text', placeholder: '08:00', maxlength: '5', style: 'max-width:86px', inputmode: 'numeric' });
   const title = el('input', { type: 'text', placeholder: 'Block title', maxlength: '60' });
-  const detail = el('input', { type: 'text', placeholder: 'Detail (optional)', maxlength: '120' });
+  const detail = el('input', { type: 'text', placeholder: 'Detail (optional)', maxlength: '160' });
   card.append(el('div', { class: 'stack', style: 'margin-top:12px' },
     el('div', { class: 'rowflex' }, time, title),
     detail,
     el('button', { class: 'btn btn--full', onClick: () => {
       if (timeToMin(time.value) === null) { toast('Time like 08:00'); return; }
       if (!title.value.trim()) { toast('Give the block a title'); return; }
-      update((d) => { d.plan.day.push({ id: uid(), time: time.value.trim(), title: title.value.trim(), detail: detail.value.trim() }); });
+      update((x) => { x.plan.day.push({ id: uid(), time: time.value.trim(), title: title.value.trim(), detail: detail.value.trim() }); });
       time.value = ''; title.value = ''; detail.value = '';
       rerender();
     } }, '+ Add block')));
@@ -71,9 +118,14 @@ function scheduleCard(plan, rerender) {
 }
 
 function sectionCard(s) {
-  return el('div', { class: 'card' },
-    el('div', { class: 'card__title', style: 'margin-bottom:8px' }, `${s.emoji || '•'} ${s.title}`),
-    ...s.lines.map((line) => el('div', { class: 'planline' }, line)));
+  const body = el('div', { class: 'collapse__body' }, ...s.lines.map((line) => el('div', { class: 'planline' }, line)));
+  const head = el('button', { class: 'collapse__head', onClick: () => {
+    const open = body.classList.toggle('open');
+    head.querySelector('.collapse__arrow').textContent = open ? '▾' : '▸';
+  } },
+    el('span', {}, `${s.emoji || '•'} ${s.title}`),
+    el('span', { class: 'collapse__arrow' }, '▸'));
+  return el('div', { class: 'card card--tight' }, head, body);
 }
 
 function render(view) {
@@ -99,10 +151,10 @@ function render(view) {
   view.append(scheduleCard(plan, rerender));
 
   if (plan.sections.length) {
-    view.append(el('div', { class: 'section-title' }, 'Protocols'));
+    view.append(el('div', { class: 'section-title' }, 'Protocols · tap to open'));
     plan.sections.forEach((s) => view.append(sectionCard(s)));
   }
-  if (plan.updated) view.append(el('div', { class: 'hint', style: 'text-align:center' }, `plan version: ${plan.updated} · review monthly with Claude`));
+  if (plan.updated) view.append(el('div', { class: 'hint', style: 'text-align:center' }, `plan version: ${plan.updated}`));
 }
 
 export default { render };

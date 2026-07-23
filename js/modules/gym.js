@@ -131,6 +131,40 @@ function templatesCard(rerender) {
   return card;
 }
 
+// ---------- cardio / running ----------
+function cardioCard(rerender) {
+  const d = getData();
+  const list = [...(d.gym.cardio || [])].sort((a, b) => b.date.localeCompare(a.date));
+  const runs = list.filter((c) => c.type === 'Run' && +c.distance >= 4.5 && +c.minutes > 0);
+  const best = runs.length ? runs.reduce((b, r) => (r.minutes / r.distance < b.minutes / b.distance ? r : b)) : null;
+
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'card__head' },
+    el('div', { class: 'card__title' }, '🏃 Cardio & engine'),
+    best ? el('span', { class: 'chip chip--streak' }, `5k best ${best.minutes}min`) : null));
+
+  const type = el('select', {}, ...['Run', 'Football', 'Walk', 'Bike', 'Sprints', 'Other'].map((t) => el('option', { value: t }, t)));
+  const distance = el('input', { type: 'number', placeholder: 'km', step: '0.1', min: '0', inputmode: 'decimal', style: 'max-width:90px' });
+  const minutes = el('input', { type: 'number', placeholder: 'mins', min: '0', inputmode: 'numeric', style: 'max-width:90px' });
+  card.append(el('div', { class: 'rowflex' }, type, distance, minutes,
+    el('button', { class: 'btn', onClick: () => {
+      if (!+minutes.value) { toast('How many minutes?'); return; }
+      update((x) => { x.gym.cardio = x.gym.cardio || []; x.gym.cardio.unshift({ id: uid(), date: todayKey(), type: type.value, distance: +distance.value || 0, minutes: +minutes.value }); });
+      distance.value = ''; minutes.value = ''; toast('Logged 🏃'); rerender();
+    } }, 'Log')));
+
+  list.slice(0, 8).forEach((c) => {
+    const pace = (c.distance && c.minutes) ? ` · ${(c.minutes / c.distance).toFixed(1)} min/km` : '';
+    card.append(el('div', { class: 'row' },
+      el('div', { class: 'row__main' },
+        el('div', { class: 'row__name' }, `${c.type}${c.distance ? ' · ' + c.distance + 'km' : ''} · ${c.minutes}min`),
+        el('div', { class: 'row__meta' }, c.date + pace)),
+      el('button', { class: 'btn btn--icon', onClick: () => { update((x) => { x.gym.cardio = x.gym.cardio.filter((y) => y.id !== c.id); }); rerender(); } }, '×')));
+  });
+  if (!list.length) card.append(el('div', { class: 'empty muted' }, 'No cardio logged yet. Tuesday’s 5k belongs here.'));
+  return card;
+}
+
 // ---------- render ----------
 function render(view) {
   const rerender = () => render(view);
@@ -155,6 +189,9 @@ function render(view) {
     });
     view.append(c);
   }
+
+  view.append(el('div', { class: 'section-title' }, 'Cardio'));
+  view.append(cardioCard(rerender));
 
   // history
   view.append(el('div', { class: 'section-title' }, `History · ${d.gym.sessions.length}`));

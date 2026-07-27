@@ -6,7 +6,7 @@
 //  - evening check-in that catches a bad day the same night
 // ============================================================
 
-import { getData, update } from '../store.js';
+import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays } from '../ui.js';
 import { computeStreaks, isDoneToday, toggleToday, weekCount } from './habits.js';
 import { toggleTask } from './tasks.js';
@@ -76,6 +76,52 @@ function nowCard(rerender) {
     next ? `Next → ${next.time} · ${next.title}${next.tomorrow ? ' (tomorrow)' : ''}` : 'Plan complete',
     total ? el('span', { class: 'spacer' }) : null,
     total ? el('span', { class: 'chip' + (done === total ? ' chip--key' : '') }, `${done}/${total} today`) : null));
+  return card;
+}
+
+// ---------- Today's checklist (the Hamza list — frictionless daily driver) ----------
+function dailyList(rerender) {
+  const d = getData();
+  const key = todayKey();
+  const items = d.daily[key] || [];
+  const done = items.filter((i) => i.done).length;
+
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'card__head' },
+    el('div', { class: 'card__title' }, '✅ Today’s list'),
+    items.length ? el('span', { class: 'chip' + (done === items.length ? ' chip--key' : '') }, `${done}/${items.length}`) : null));
+
+  // quick add — the whole point is zero friction: type, enter, done
+  const input = el('input', { type: 'text', placeholder: 'Add anything — “finish trade review”, “wave at someone”…', maxlength: '100' });
+  const add = () => {
+    const v = input.value.trim();
+    if (!v) return;
+    update((x) => { x.daily[key] = x.daily[key] || []; x.daily[key].push({ id: uid(), text: v, done: false }); });
+    input.value = ''; rerender(); setTimeout(() => { const n = document.querySelector('#dailyAdd'); if (n) n.focus(); }, 0);
+  };
+  input.id = 'dailyAdd';
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
+  card.append(el('div', { class: 'inline-form' }, input, el('button', { class: 'btn btn--primary', onClick: add }, 'Add')));
+
+  items.forEach((it) => {
+    card.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
+      el('button', { class: 'check' + (it.done ? ' on' : ''), 'aria-label': 'Tick', onClick: () => { update((x) => { const t = (x.daily[key] || []).find((a) => a.id === it.id); if (t) t.done = !t.done; }); rerender(); } }),
+      el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, it.text)),
+      el('button', { class: 'btn btn--icon', title: 'Remove', onClick: () => { update((x) => { x.daily[key] = (x.daily[key] || []).filter((a) => a.id !== it.id); }); rerender(); } }, '×')));
+  });
+
+  if (!items.length) {
+    // offer to carry over yesterday's unfinished so recurring stuff isn't retyped
+    const yKey = addDays(key, -1);
+    const carry = (d.daily[yKey] || []).filter((i) => !i.done);
+    card.append(el('div', { class: 'empty muted', style: 'padding:14px 6px' }, 'Empty. Build today’s list — big things and tiny ones.'));
+    if (carry.length) {
+      card.append(el('button', { class: 'btn btn--ghost btn--full', onClick: () => {
+        update((x) => { x.daily[key] = carry.map((i) => ({ id: uid(), text: i.text, done: false })); });
+        toast(`Carried over ${carry.length} from yesterday`); rerender();
+      } }, `↩ Copy yesterday’s ${carry.length} unfinished`));
+    }
+  }
   return card;
 }
 
@@ -167,6 +213,10 @@ function render(view) {
 
   const nc = nowCard(rerender);
   if (nc) view.append(nc);
+
+  // the daily driver — right under NOW so it's the first thing you act on
+  view.append(el('div', { class: 'section-title' }, 'Checklist'));
+  view.append(dailyList(rerender));
 
   // Non-negotiables (never-zero)
   const keystones = d.habits.filter((h) => h.keystone);

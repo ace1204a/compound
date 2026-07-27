@@ -20,6 +20,7 @@ function defaultData() {
       supabase: { url: '', key: '' },
     },
     habits: [],   // { id, name, cadence:'daily'|{perWeek:n}, keystone:bool, createdAt, log:{ 'YYYY-MM-DD': true } }
+    daily: {},    // 'YYYY-MM-DD' -> [ { id, text, done } ]  — the frictionless daily checklist
     tasks: [],    // { id, title, bucket:'today'|'upcoming'|'someday', project, done, createdAt, completedAt }
     checkins: {}, // 'YYYY-MM-DD' -> { rating, win, lesson, updatedAt }
     goals: [],    // { id, area, title, why, status:'active'|'done', createdAt }

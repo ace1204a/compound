@@ -8,7 +8,7 @@
 
 import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
-const SYNC_MODULES = ['habits', 'tasks', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'plan'];
+const SYNC_MODULES = ['habits', 'daily', 'tasks', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'plan'];
 const META_KEY = 'compound.sync.meta.v1';
 
 let client = null;
@@ -126,6 +126,19 @@ export const MERGERS = {
       return { ...r, ...l, log: { ...(r.log || {}), ...(l.log || {}) } };
     });
     return [...out, ...byId.values()];
+  },
+  daily(local, remote) {
+    // per date: union items by id; a tick on either device wins
+    const out = { ...remote };
+    for (const [date, items] of Object.entries(local || {})) {
+      const byId = new Map((out[date] || []).map((i) => [i.id, i]));
+      for (const i of items) {
+        const r = byId.get(i.id);
+        byId.set(i.id, r ? { ...r, ...i, done: i.done || r.done } : i);
+      }
+      out[date] = [...byId.values()];
+    }
+    return out;
   },
   checkins(local, remote) {
     const out = { ...remote };

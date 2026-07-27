@@ -37,51 +37,67 @@ function startDraft(template) {
   });
 }
 
-// ---------- UI: active workout ----------
+// ---------- UI: active workout (Strong-style, fully inline-editable) ----------
+// Last time you did this exercise → shown as the "previous" hint per set.
+function lastTimeFor(d, exercise) {
+  for (const s of d.gym.sessions) {
+    const e = (s.entries || []).find((x) => x.exercise.toLowerCase() === exercise.toLowerCase());
+    if (e && e.sets.length) return e.sets;
+  }
+  return null;
+}
+
 function draftCard(rerender) {
   const d = getData();
   const draft = d.gym.draft;
 
   const card = el('div', { class: 'card card--accent' });
   card.append(el('div', { class: 'card__head' },
-    el('div', { class: 'card__title' }, `🏋️ ${draft.name} — in progress`),
+    el('div', { class: 'card__title' }, `🏋️ ${draft.name}`),
     el('button', { class: 'btn btn--sm btn--danger', onClick: () => { if (confirmAction('Discard this workout?')) { update((x) => { x.gym.draft = null; }); rerender(); } } }, 'Discard')));
 
   draft.entries.forEach((entry, ei) => {
-    const block = el('div', { style: 'border-top:1px solid var(--line);padding:10px 0' });
-    block.append(el('div', { class: 'rowflex' },
-      el('div', { class: 'row__name' }, entry.exercise),
-      el('span', { class: 'spacer' }),
+    const prev = lastTimeFor(d, entry.exercise);
+    const block = el('div', { style: 'border-top:1px solid var(--line);padding:12px 0' });
+
+    // editable exercise name (no more delete-to-rename)
+    const name = el('input', { class: 'exname', type: 'text', value: entry.exercise, maxlength: '60' });
+    name.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].exercise = name.value.trim() || entry.exercise; }));
+    block.append(el('div', { class: 'rowflex' }, name,
       el('button', { class: 'btn btn--icon', title: 'Remove exercise', onClick: () => { update((x) => { x.gym.draft.entries.splice(ei, 1); }); rerender(); } }, '×')));
 
+    // header row
+    block.append(el('div', { class: 'setrow setrow--head' },
+      el('span', { class: 'setrow__n' }, '#'), el('span', {}, 'kg'), el('span', {}, 'reps'), el('span', {}, 'prev'), el('span', {}, '')));
+
     entry.sets.forEach((s, si) => {
-      block.append(el('div', { class: 'rowflex', style: 'margin-top:6px' },
-        el('span', { class: 'chip' }, `set ${si + 1}`),
-        el('span', { class: 'muted' }, `${s.kg} kg × ${s.reps}`),
-        el('span', { class: 'spacer' }),
-        el('button', { class: 'btn btn--icon', onClick: () => { update((x) => { x.gym.draft.entries[ei].sets.splice(si, 1); }); rerender(); } }, '×')));
+      const kg = el('input', { type: 'number', value: s.kg, min: '0', step: '0.5', inputmode: 'decimal' });
+      const reps = el('input', { type: 'number', value: s.reps, min: '0', inputmode: 'numeric' });
+      // edits save live — the whole point
+      kg.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].sets[si].kg = +kg.value || 0; }));
+      reps.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].sets[si].reps = +reps.value || 0; }));
+      const p = prev && prev[si] ? `${prev[si].kg}×${prev[si].reps}` : '—';
+      block.append(el('div', { class: 'setrow' + (s.done ? ' setrow--done' : '') },
+        el('span', { class: 'setrow__n' }, si + 1),
+        kg, reps,
+        el('span', { class: 'setrow__n', style: 'font-size:11px' }, p),
+        el('button', { class: 'btn btn--icon', title: 'Remove set', onClick: () => { update((x) => { x.gym.draft.entries[ei].sets.splice(si, 1); }); rerender(); } }, '×')));
     });
 
-    const kg = el('input', { type: 'number', placeholder: 'kg', min: '0', step: '0.5', style: 'max-width:90px', inputmode: 'decimal' });
-    const reps = el('input', { type: 'number', placeholder: 'reps', min: '0', style: 'max-width:90px', inputmode: 'numeric' });
-    block.append(el('div', { class: 'rowflex', style: 'margin-top:8px' }, kg, reps,
-      el('button', { class: 'btn btn--sm', onClick: () => {
-        if (!+kg.value && +kg.value !== 0) { toast('Enter the weight'); return; }
-        if (!+reps.value) { toast('Enter the reps'); return; }
-        update((x) => { x.gym.draft.entries[ei].sets.push({ kg: +kg.value, reps: +reps.value }); });
-        rerender();
-      } }, '+ set')));
+    // add set — prefilled from the last set (Strong behaviour)
+    block.append(el('button', { class: 'btn btn--sm btn--full', style: 'margin-top:8px', onClick: () => {
+      const last = entry.sets[entry.sets.length - 1] || (prev && prev[entry.sets.length]) || { kg: 0, reps: 0 };
+      update((x) => { x.gym.draft.entries[ei].sets.push({ kg: last.kg || 0, reps: last.reps || 0, done: false }); });
+      rerender();
+    } }, '+ Add set'));
     card.append(block);
   });
 
   // add exercise
   const exName = el('input', { type: 'text', placeholder: 'Add exercise — e.g. Incline DB press', maxlength: '60' });
-  card.append(el('div', { class: 'inline-form', style: 'margin-top:10px' }, exName,
-    el('button', { class: 'btn', onClick: () => {
-      const v = exName.value.trim(); if (!v) return;
-      update((x) => { x.gym.draft.entries.push({ exercise: v, sets: [] }); });
-      rerender();
-    } }, 'Add')));
+  const addEx = () => { const v = exName.value.trim(); if (!v) return; update((x) => { x.gym.draft.entries.push({ exercise: v, sets: [] }); }); exName.value = ''; rerender(); };
+  exName.addEventListener('keydown', (e) => { if (e.key === 'Enter') addEx(); });
+  card.append(el('div', { class: 'inline-form', style: 'margin-top:12px' }, exName, el('button', { class: 'btn', onClick: addEx }, 'Add')));
 
   const notes = el('input', { type: 'text', placeholder: 'Notes (optional)', value: draft.notes || '' });
   notes.addEventListener('change', () => update((x) => { x.gym.draft.notes = notes.value; }));
@@ -90,10 +106,7 @@ function draftCard(rerender) {
   card.append(el('button', { class: 'btn btn--primary btn--full', style: 'margin-top:12px', onClick: () => {
     const total = draft.entries.reduce((n, e) => n + e.sets.length, 0);
     if (!total) { toast('Log at least one set'); return; }
-    update((x) => {
-      x.gym.sessions.unshift({ id: uid(), ...x.gym.draft });
-      x.gym.draft = null;
-    });
+    update((x) => { x.gym.sessions.unshift({ id: uid(), ...x.gym.draft, date: x.gym.draft.date || todayKey() }); x.gym.draft = null; });
     toast('Workout saved 💪'); rerender();
   } }, 'Finish workout'));
 

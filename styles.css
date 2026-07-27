@@ -325,6 +325,32 @@ input::placeholder, textarea::placeholder { color: var(--muted-2); }
   background: var(--bg-2); border-radius: 0 8px 8px 0; font-size: 13.5px; color: #cdd6e0; font-style: italic;
 }
 
+/* day slider (Structured/Productive style) */
+.dayslider { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0 12px; }
+.dayslider::-webkit-scrollbar { display: none; }
+.daychip {
+  flex: 0 0 auto; width: 46px; padding: 8px 0; border-radius: 12px;
+  background: var(--card); border: 1px solid var(--line); color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative;
+}
+.daychip__dow { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+.daychip__num { font-size: 16px; font-weight: 800; color: var(--text); }
+.daychip.today .daychip__num { color: var(--gold); }
+.daychip.on { background: var(--gold); border-color: var(--gold); }
+.daychip.on .daychip__dow, .daychip.on .daychip__num { color: #1a1405; }
+.daychip__dot { position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--green); }
+
+/* Strong-style set table */
+.settable { width: 100%; margin-top: 8px; }
+.setrow { display: grid; grid-template-columns: 34px 1fr 1fr 34px 30px; gap: 8px; align-items: center; padding: 4px 0; }
+.setrow--head { color: var(--muted-2); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
+.setrow__n { text-align: center; font-weight: 700; color: var(--muted); font-size: 13px; }
+.setrow input { min-height: 38px; padding: 6px 8px; text-align: center; border-radius: 9px; }
+.setrow .check { width: 26px; height: 26px; }
+.setrow--done input { border-color: var(--green-dim); color: var(--green); }
+.exname { font-weight: 700; font-size: 15px; background: transparent; border: none; border-bottom: 1px dashed var(--line); padding: 4px 2px; width: 100%; }
+.exname:focus { border-bottom-color: var(--gold); }
+
 /* sync status dot */
 .syncdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--muted-2); vertical-align: 1px; }
 .syncdot--ok { background: var(--green); }

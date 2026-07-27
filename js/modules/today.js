@@ -1,16 +1,19 @@
 // ============================================================
-// Today — the home screen and the heart of the app.
-//  - NOW/NEXT: what block of the plan you're in, right now
-//  - non-negotiables first (never-zero)
-//  - today's habits + tasks, ticked in place
-//  - evening check-in that catches a bad day the same night
+// Today / Day — the home screen, now DATE-AWARE.
+// A horizontal day slider (Structured/Productive style) lets you
+// scroll to any past or future day and view + edit it: habits
+// ticked, the daily checklist, and the evening check-in all read
+// and write to the selected date.
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, keyToDate, addDays } from '../ui.js';
-import { computeStreaks, isDoneToday, toggleToday, weekCount } from './habits.js';
+import { el, toast, todayKey, keyToDate, addDays, prettyDate } from '../ui.js';
+import { computeStreaks, isDoneOn, toggleHabitOn, weekCount } from './habits.js';
 import { toggleTask } from './tasks.js';
 import { nowAndNext, dayProgress, isBlockDone, toggleBlock } from './plan.js';
+
+// which day we're looking at (persists while the app is open)
+let selectedKey = todayKey();
 
 const LINES = [
   'Small reps, compounded.',
@@ -30,27 +33,65 @@ function greeting() {
   return `Evening, ${name}.`;
 }
 
+function dayHasActivity(d, key) {
+  if (d.checkins[key]) return true;
+  if ((d.daily[key] || []).length) return true;
+  if (d.plan.done && d.plan.done[key] && Object.keys(d.plan.done[key]).length) return true;
+  return d.habits.some((h) => h.log && h.log[key]);
+}
+
+// ---------- day slider ----------
+function daySlider(rerender) {
+  const d = getData();
+  const strip = el('div', { class: 'dayslider', id: 'dayslider' });
+  for (let i = -35; i <= 7; i++) {
+    const key = addDays(todayKey(), i);
+    const date = keyToDate(key);
+    const sel = key === selectedKey;
+    const isToday = key === todayKey();
+    const chip = el('button', {
+      class: 'daychip' + (sel ? ' on' : '') + (isToday ? ' today' : ''),
+      onClick: () => { selectedKey = key; rerender(); },
+    },
+      el('span', { class: 'daychip__dow' }, date.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 3)),
+      el('span', { class: 'daychip__num' }, String(date.getDate())),
+      dayHasActivity(d, key) && !sel ? el('span', { class: 'daychip__dot' }) : null);
+    strip.append(chip);
+  }
+  // scroll the selected chip into view after render
+  setTimeout(() => { const on = document.querySelector('#dayslider .daychip.on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' }); }, 0);
+  return strip;
+}
+
 function dayNumber() {
   const start = new Date(getData().settings.createdAt || Date.now());
   const days = Math.floor((keyToDate(todayKey()) - new Date(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000) + 1;
   return Math.max(1, days);
 }
 
-function hero() {
-  const line = LINES[keyToDate(todayKey()).getDate() % LINES.length];
+function hero(key) {
+  const isToday = key === todayKey();
   const sleep = getData().plan.sleep;
-  return el('div', { class: 'card card--accent hero' },
-    el('div', { class: 'rowflex' },
-      el('div', { class: 'hero__greet' }, greeting()),
-      el('span', { class: 'spacer' }),
-      el('span', { class: 'chip chip--streak' }, `Day ${dayNumber()}`)),
-    el('div', { class: 'hero__line' }, line),
-    sleep ? el('div', { class: 'row__meta', style: 'margin-top:8px' },
-      el('span', { class: 'chip' }, `🌙 bed ${sleep.bed}`),
-      el('span', { class: 'chip' }, `⏰ wake ${sleep.wake}`)) : null);
+  if (isToday) {
+    const line = LINES[keyToDate(todayKey()).getDate() % LINES.length];
+    return el('div', { class: 'card card--accent hero' },
+      el('div', { class: 'rowflex' },
+        el('div', { class: 'hero__greet' }, greeting()),
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'chip chip--streak' }, `Day ${dayNumber()}`)),
+      el('div', { class: 'hero__line' }, line),
+      sleep ? el('div', { class: 'row__meta', style: 'margin-top:8px' },
+        el('span', { class: 'chip' }, `🌙 bed ${sleep.bed}`),
+        el('span', { class: 'chip' }, `⏰ wake ${sleep.wake}`)) : null);
+  }
+  const past = keyToDate(key) < keyToDate(todayKey());
+  return el('div', { class: 'card hero' },
+    el('div', { class: 'hero__greet' }, prettyDate(keyToDate(key))),
+    el('div', { class: 'hero__line' }, past ? 'Looking back — tick or edit anything you missed.' : 'Planning ahead — set this day up.'),
+    el('button', { class: 'btn btn--sm', style: 'margin-top:10px', onClick: () => { selectedKey = todayKey(); render(document.getElementById('view')); } }, '→ Back to today'));
 }
 
-// ---------- NOW / NEXT (with a tick, and today's progress) ----------
+// ---------- NOW / NEXT (today only) ----------
 function nowCard(rerender) {
   const d = getData();
   const { current, next } = nowAndNext(d.plan.day);
@@ -69,9 +110,7 @@ function nowCard(rerender) {
   } else {
     card.append(el('div', { class: 'nowcard__label' }, 'DAY NOT STARTED'));
   }
-  if (total) {
-    card.append(el('div', { class: 'progress', style: 'margin-top:12px' }, el('div', { class: 'progress__fill', style: `width:${(done / total) * 100}%` })));
-  }
+  if (total) card.append(el('div', { class: 'progress', style: 'margin-top:12px' }, el('div', { class: 'progress__fill', style: `width:${(done / total) * 100}%` })));
   card.append(el('div', { class: 'nowcard__next', onClick: () => { location.hash = '/plan'; }, style: 'cursor:pointer' },
     next ? `Next → ${next.time} · ${next.title}${next.tomorrow ? ' (tomorrow)' : ''}` : 'Plan complete',
     total ? el('span', { class: 'spacer' }) : null,
@@ -79,19 +118,17 @@ function nowCard(rerender) {
   return card;
 }
 
-// ---------- Today's checklist (the Hamza list — frictionless daily driver) ----------
-function dailyList(rerender) {
+// ---------- daily checklist (for the selected day) ----------
+function dailyList(key, rerender) {
   const d = getData();
-  const key = todayKey();
   const items = d.daily[key] || [];
   const done = items.filter((i) => i.done).length;
 
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'card__head' },
-    el('div', { class: 'card__title' }, '✅ Today’s list'),
+    el('div', { class: 'card__title' }, '✅ Checklist'),
     items.length ? el('span', { class: 'chip' + (done === items.length ? ' chip--key' : '') }, `${done}/${items.length}`) : null));
 
-  // quick add — the whole point is zero friction: type, enter, done
   const input = el('input', { type: 'text', placeholder: 'Add anything — “finish trade review”, “wave at someone”…', maxlength: '100' });
   const add = () => {
     const v = input.value.trim();
@@ -111,27 +148,23 @@ function dailyList(rerender) {
   });
 
   if (!items.length) {
-    // offer to carry over yesterday's unfinished so recurring stuff isn't retyped
-    const yKey = addDays(key, -1);
-    const carry = (d.daily[yKey] || []).filter((i) => !i.done);
-    card.append(el('div', { class: 'empty muted', style: 'padding:14px 6px' }, 'Empty. Build today’s list — big things and tiny ones.'));
-    if (carry.length) {
-      card.append(el('button', { class: 'btn btn--ghost btn--full', onClick: () => {
-        update((x) => { x.daily[key] = carry.map((i) => ({ id: uid(), text: i.text, done: false })); });
-        toast(`Carried over ${carry.length} from yesterday`); rerender();
-      } }, `↩ Copy yesterday’s ${carry.length} unfinished`));
-    }
+    const carry = (d.daily[addDays(key, -1)] || []).filter((i) => !i.done);
+    card.append(el('div', { class: 'empty muted', style: 'padding:14px 6px' }, 'Empty. Build this day’s list — big things and tiny ones.'));
+    if (carry.length) card.append(el('button', { class: 'btn btn--ghost btn--full', onClick: () => {
+      update((x) => { x.daily[key] = carry.map((i) => ({ id: uid(), text: i.text, done: false })); });
+      toast(`Carried over ${carry.length}`); rerender();
+    } }, `↩ Copy previous day’s ${carry.length} unfinished`));
   }
   return card;
 }
 
-function habitLine(h, rerender) {
+function habitLine(h, key, rerender) {
   const { current } = computeStreaks(h);
-  const done = isDoneToday(h);
+  const done = isDoneOn(h, key);
   const tier = current >= 30 ? ' chip--t30' : current >= 7 ? ' chip--t7' : '';
   const weekly = h.cadence && h.cadence.perWeek;
   return el('div', { class: 'row' + (done ? ' done' : '') },
-    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { toggleToday(h.id); rerender(); } }),
+    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { toggleHabitOn(h.id, key); rerender(); } }),
     el('div', { class: 'row__main' },
       el('div', { class: 'row__name' }, h.name),
       el('div', { class: 'row__meta' },
@@ -145,11 +178,11 @@ function taskLine(t, rerender) {
     el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, t.title)));
 }
 
-// ---------- Evening check-in ----------
+// ---------- Evening check-in (for the selected day) ----------
 function ratingBars() {
   const d = getData();
-  const days = Array.from({ length: 7 }, (_, i) => addDays(todayKey(), i - 6));
-  const wrap = el('div', { class: 'ratebars', title: 'Last 7 check-ins' });
+  const days = Array.from({ length: 7 }, (_, i) => addDays(selectedKey, i - 6));
+  const wrap = el('div', { class: 'ratebars', title: '7 days up to this one' });
   for (const k of days) {
     const c = d.checkins[k];
     const r = c ? c.rating : 0;
@@ -159,48 +192,41 @@ function ratingBars() {
   return wrap;
 }
 
-function checkinCard(rerender) {
+function checkinCard(key, rerender) {
   const d = getData();
-  const key = todayKey();
   const existing = d.checkins[key];
 
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'card__head' },
-    el('div', { class: 'card__title' }, '🌙 Evening check-in'),
+    el('div', { class: 'card__title' }, '🌙 Check-in'),
     el('div', { class: 'rowflex' }, ratingBars(),
       existing ? el('span', { class: 'chip chip--key' }, 'done') : el('span', { class: 'card__sub' }, '30s'))));
 
   let rating = existing ? existing.rating : 0;
   const ratingWrap = el('div', { class: 'rating' });
-  function paintRating() {
-    ratingWrap.className = 'rating' + (rating && rating <= 4 ? ' rating--low' : '');
-    ratingWrap.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i + 1 === rating));
-  }
-  for (let i = 1; i <= 10; i++) ratingWrap.append(el('button', { onClick: () => { rating = i; paintRating(); reflectLow(); } }, i));
+  function paint() { ratingWrap.className = 'rating' + (rating && rating <= 4 ? ' rating--low' : ''); ratingWrap.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i + 1 === rating)); }
+  for (let i = 1; i <= 10; i++) ratingWrap.append(el('button', { onClick: () => { rating = i; paint(); reflectLow(); } }, i));
 
-  const win = el('textarea', { placeholder: 'One win today (anything counts)…' });
+  const win = el('textarea', { placeholder: 'One win…' });
   const lesson = el('textarea', { placeholder: 'One lesson / one thing to fix tomorrow…' });
   if (existing) { win.value = existing.win || ''; lesson.value = existing.lesson || ''; }
 
-  const lowNote = el('div', { class: 'banner banner--warn', style: 'display:none' },
-    'Rough day — noted, not written off. Tomorrow is a fresh non-zero day. What’s the one non-negotiable you’ll still hit?');
+  const lowNote = el('div', { class: 'banner banner--warn', style: 'display:none' }, 'Rough day — noted, not written off. What’s the one non-negotiable you’ll still hit?');
   function reflectLow() { lowNote.style.display = rating && rating <= 4 ? '' : 'none'; }
 
   const save = el('button', { class: 'btn btn--primary btn--full', onClick: () => {
     if (!rating) { toast('Pick a rating 1–10'); return; }
     update((data) => { data.checkins[key] = { rating, win: win.value.trim(), lesson: lesson.value.trim(), updatedAt: new Date().toISOString() }; });
-    toast(existing ? 'Check-in updated' : 'Logged. See you tomorrow.');
-    rerender();
+    toast(existing ? 'Check-in updated' : 'Logged.'); rerender();
   } }, existing ? 'Update check-in' : 'Save check-in');
 
   card.append(
-    el('div', { class: 'field' }, el('span', {}, 'How was today? (1–10)'), ratingWrap),
+    el('div', { class: 'field' }, el('span', {}, 'Rate the day (1–10)'), ratingWrap),
     lowNote,
     el('div', { class: 'field' }, el('span', {}, 'Win'), win),
     el('div', { class: 'field' }, el('span', {}, 'Lesson'), lesson),
-    save,
-  );
-  paintRating(); reflectLow();
+    save);
+  paint(); reflectLow();
   return card;
 }
 
@@ -208,30 +234,30 @@ function render(view) {
   const rerender = () => render(view);
   view.replaceChildren();
   const d = getData();
+  const key = selectedKey;
+  const isToday = key === todayKey();
 
-  view.append(hero());
+  view.append(daySlider(rerender));
+  view.append(hero(key));
 
-  const nc = nowCard(rerender);
-  if (nc) view.append(nc);
+  if (isToday) { const nc = nowCard(rerender); if (nc) view.append(nc); }
 
-  // the daily driver — right under NOW so it's the first thing you act on
   view.append(el('div', { class: 'section-title' }, 'Checklist'));
-  view.append(dailyList(rerender));
+  view.append(dailyList(key, rerender));
 
-  // Non-negotiables (never-zero)
+  // Non-negotiables
   const keystones = d.habits.filter((h) => h.keystone);
   if (keystones.length) {
-    const doneCount = keystones.filter(isDoneToday).length;
+    const doneCount = keystones.filter((h) => isDoneOn(h, key)).length;
     view.append(el('div', { class: 'section-title' }, '★ Non-negotiables'));
-    if (doneCount === keystones.length) view.append(el('div', { class: 'banner' }, '✅ You didn’t zero today. That’s the whole game — a chain that never breaks.'));
+    if (doneCount === keystones.length) view.append(el('div', { class: 'banner' }, '✅ Didn’t zero — a chain that never breaks.'));
     const c = el('div', { class: 'card card--accent' });
-    keystones.forEach((h) => c.append(habitLine(h, rerender)));
+    keystones.forEach((h) => c.append(habitLine(h, key, rerender)));
     view.append(c);
   }
 
-  // Today's habits (non-keystone)
   const others = d.habits.filter((h) => !h.keystone);
-  view.append(el('div', { class: 'section-title' }, 'Today’s habits'));
+  view.append(el('div', { class: 'section-title' }, 'Habits'));
   if (!d.habits.length) {
     view.append(el('div', { class: 'card empty' }, el('span', { class: 'empty__emoji' }, '🌱'), el('div', {}, 'No habits yet.'),
       el('button', { class: 'btn btn--primary', style: 'margin-top:12px', onClick: () => { location.hash = '/habits'; } }, 'Add your first habit')));
@@ -239,24 +265,23 @@ function render(view) {
     view.append(el('div', { class: 'card empty muted' }, 'All your habits are non-negotiables above.'));
   } else {
     const c = el('div', { class: 'card' });
-    others.forEach((h) => c.append(habitLine(h, rerender)));
+    others.forEach((h) => c.append(habitLine(h, key, rerender)));
     view.append(c);
   }
 
-  // Today's tasks
-  const todayTasks = d.tasks.filter((t) => t.bucket === 'today');
-  view.append(el('div', { class: 'section-title' }, 'Today’s tasks'));
-  if (!todayTasks.length) {
-    view.append(el('div', { class: 'card empty muted' }, 'Nothing on today’s list. Add tasks in the Tasks tab.'));
-  } else {
-    const c = el('div', { class: 'card' });
-    todayTasks.sort((a, b) => (a.done === b.done) ? 0 : a.done ? 1 : -1).forEach((t) => c.append(taskLine(t, rerender)));
-    view.append(c);
+  // Today's tasks (today only — tasks aren't per-day)
+  if (isToday) {
+    const todayTasks = d.tasks.filter((t) => t.bucket === 'today');
+    if (todayTasks.length) {
+      view.append(el('div', { class: 'section-title' }, 'Tasks'));
+      const c = el('div', { class: 'card' });
+      todayTasks.sort((a, b) => (a.done === b.done) ? 0 : a.done ? 1 : -1).forEach((t) => c.append(taskLine(t, rerender)));
+      view.append(c);
+    }
   }
 
-  // Evening check-in
   view.append(el('div', { class: 'section-title' }, 'Reflect'));
-  view.append(checkinCard(rerender));
+  view.append(checkinCard(key, rerender));
 }
 
 export default { render };

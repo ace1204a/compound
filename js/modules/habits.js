@@ -37,14 +37,16 @@ export function weekCount(habit) {
 }
 
 export function isDoneToday(habit) { return !!(habit.log && habit.log[todayKey()]); }
+export function isDoneOn(habit, key) { return !!(habit.log && habit.log[key]); }
 
-export function toggleToday(habitId) {
+export function toggleToday(habitId) { toggleHabitOn(habitId, todayKey()); }
+
+export function toggleHabitOn(habitId, key) {
   update((d) => {
     const h = d.habits.find((x) => x.id === habitId);
     if (!h) return;
     h.log = h.log || {};
-    const k = todayKey();
-    if (h.log[k]) delete h.log[k]; else h.log[k] = true;
+    if (h.log[key]) delete h.log[key]; else h.log[key] = true;
   });
 }
 

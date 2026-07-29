@@ -11,6 +11,7 @@ import { el, toast, todayKey, addDays, keyToDate, prettyDate, timeToMin, confirm
 
 let selectedDay = todayKey();
 let editingId = null;
+let editingRoutine = null;
 let showRoutines = false;
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -54,7 +55,7 @@ function addForm(rerender) {
   let days = [];
 
   const title = el('input', { type: 'text', placeholder: 'Add a task…', maxlength: '120' });
-  const time = el('input', { type: 'text', placeholder: 'time (e.g. 08:00, optional)', maxlength: '5', inputmode: 'numeric', style: 'max-width:150px' });
+  const time = el('input', { type: 'time', style: 'max-width:130px' }); // native time picker (works on iPhone)
 
   const seg = el('div', { class: 'seg' },
     ...[['once', 'One-off'], ['daily', 'Daily'], ['weekdays', 'Pick days']].map(([v, label], i) =>
@@ -147,7 +148,7 @@ function reorderUntimed(key, uidx, dir) {
 
 function editRow(it, rerender) {
   const title = el('input', { type: 'text', value: it.title, maxlength: '120' });
-  const time = el('input', { type: 'text', value: it.time || '', placeholder: 'time', maxlength: '5', style: 'max-width:90px', inputmode: 'numeric' });
+  const time = el('input', { type: 'time', value: it.time || '', style: 'max-width:120px' });
   const save = () => {
     const t = title.value.trim(); if (!t) { toast('Needs a title'); return; }
     update((d) => { const task = d.tasks.find((x) => x.id === it.id); task.title = t; task.time = timeToMin(time.value) != null ? time.value.trim() : null; });
@@ -184,9 +185,11 @@ function routinesCard(rerender) {
   const d = getData();
   const body = el('div', { class: 'collapse__body' + (showRoutines ? ' open' : '') });
   d.routines.forEach((r) => {
+    if (editingRoutine === r.id) { body.append(routineEditor(r, rerender)); return; }
     const label = r.freq === 'daily' ? 'daily' : (r.freq.days || []).map((n) => DOW[DOW_NUM.indexOf(n)]).join(' ');
     body.append(el('div', { class: 'row' },
       el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, (r.time ? r.time + ' · ' : '') + r.title), el('div', { class: 'row__meta' }, '↻ ' + label)),
+      el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingRoutine = r.id; rerender(); } }, '✎'),
       el('button', { class: 'btn btn--icon', title: 'Delete routine', onClick: () => { if (confirmAction(`Delete repeating task "${r.title}"?`)) { update((x) => { x.routines = x.routines.filter((a) => a.id !== r.id); }); rerender(); } } }, '×')));
   });
   if (!d.routines.length) body.append(el('div', { class: 'empty muted' }, 'No repeating tasks yet. Add one above with “Daily” or “Pick days”.'));
@@ -194,6 +197,32 @@ function routinesCard(rerender) {
   const head = el('button', { class: 'collapse__head', onClick: () => { showRoutines = !showRoutines; body.classList.toggle('open', showRoutines); head.querySelector('.collapse__arrow').textContent = showRoutines ? '▾' : '▸'; } },
     el('span', {}, `↻ Repeating tasks · ${d.routines.length}`), el('span', { class: 'collapse__arrow' }, showRoutines ? '▾' : '▸'));
   return el('div', { class: 'card card--tight' }, head, body);
+}
+
+function routineEditor(r, rerender) {
+  const name = el('input', { type: 'text', value: r.title, maxlength: '120' });
+  const time = el('input', { type: 'time', value: r.time || '', style: 'max-width:120px' });
+  let daily = r.freq === 'daily';
+  let days = daily ? [] : [...(r.freq.days || [])];
+
+  const freqSeg = el('div', { class: 'seg' },
+    el('button', { class: daily ? 'on' : '', onClick: (e) => { daily = true; freqSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.target)); dayPick.style.display = 'none'; } }, 'Daily'),
+    el('button', { class: !daily ? 'on' : '', onClick: (e) => { daily = false; freqSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.target)); dayPick.style.display = ''; } }, 'Pick days'));
+  const dayPick = el('div', { class: 'chiprow', style: 'display:' + (daily ? 'none' : '') + ';margin-top:8px' },
+    ...DOW.map((dw, i) => el('button', { class: 'chipbtn' + (days.includes(DOW_NUM[i]) ? ' on' : ''), onClick: (e) => { const n = DOW_NUM[i]; if (days.includes(n)) { days = days.filter((x) => x !== n); e.target.classList.remove('on'); } else { days.push(n); e.target.classList.add('on'); } } }, dw)));
+
+  return el('div', { class: 'card card--accent' },
+    el('div', { class: 'field' }, el('span', {}, 'Name'), name),
+    el('div', { class: 'rowflex', style: 'margin-top:8px' }, el('span', { class: 'card__sub' }, 'Time'), time),
+    el('div', { style: 'margin-top:8px' }, freqSeg), dayPick,
+    el('div', { class: 'rowflex', style: 'margin-top:10px' },
+      el('button', { class: 'btn btn--primary', onClick: () => {
+        const n = name.value.trim(); if (!n) { toast('Needs a name'); return; }
+        if (!daily && !days.length) { toast('Pick at least one day'); return; }
+        update((x) => { const rr = x.routines.find((a) => a.id === r.id); rr.title = n; rr.time = timeToMin(time.value) != null ? time.value : null; rr.freq = daily ? 'daily' : { days: [...days] }; });
+        editingRoutine = null; toast('Saved'); rerender();
+      } }, 'Save'),
+      el('button', { class: 'btn', onClick: () => { editingRoutine = null; rerender(); } }, 'Cancel')));
 }
 
 // ---------- day navigation ----------
@@ -206,6 +235,7 @@ function dayNav(rerender) {
 }
 
 function render(view) {
+  const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   view.append(el('div', { class: 'section-title' }, 'Tasks'));
@@ -214,6 +244,7 @@ function render(view) {
   view.append(addForm(rerender));
   view.append(routinesCard(rerender));
   view.append(backlogCard(rerender));
+  window.scrollTo(0, y);
 }
 
 export default { render };

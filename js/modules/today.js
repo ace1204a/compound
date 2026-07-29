@@ -8,7 +8,7 @@
 
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays, prettyDate } from '../ui.js';
-import { computeStreaks, isDoneOn, toggleHabitOn, weekCount } from './habits.js';
+import { computeStreaks, isDoneOn, tapHabit, weekCount, habitCount, habitTarget, TIME_GROUPS } from './habits.js';
 import { tasksForDay, toggleTaskItem } from './tasks.js';
 import { nowAndNext, dayProgress, isBlockDone, toggleBlock } from './plan.js';
 
@@ -163,11 +163,14 @@ function habitLine(h, key, rerender) {
   const done = isDoneOn(h, key);
   const tier = current >= 30 ? ' chip--t30' : current >= 7 ? ' chip--t7' : '';
   const weekly = h.cadence && h.cadence.perWeek;
+  const target = habitTarget(h), count = habitCount(h, key);
   return el('div', { class: 'row' + (done ? ' done' : '') },
-    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { toggleHabitOn(h.id, key); rerender(); } }),
+    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { tapHabit(h.id, key); rerender(); } },
+      target > 1 && !done ? el('span', { style: 'font-size:11px;font-weight:800' }, '+') : null),
     el('div', { class: 'row__main' },
       el('div', { class: 'row__name' }, h.name),
       el('div', { class: 'row__meta' },
+        target > 1 ? el('span', { class: 'chip' + (done ? ' chip--key' : '') }, `${count}/${target}${h.unit || ''}`) : null,
         current > 0 ? el('span', { class: 'chip chip--streak' + tier }, `🔥 ${current}`) : null,
         weekly ? el('span', { class: 'chip' }, `${weekCount(h)}/${h.cadence.perWeek} wk`) : null)));
 }
@@ -226,6 +229,7 @@ function checkinCard(key, rerender) {
 }
 
 function render(view) {
+  const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   const d = getData();
@@ -251,17 +255,21 @@ function render(view) {
     view.append(c);
   }
 
+  // remaining habits, grouped by time of day
   const others = d.habits.filter((h) => !h.keystone);
-  view.append(el('div', { class: 'section-title' }, 'Habits'));
   if (!d.habits.length) {
+    view.append(el('div', { class: 'section-title' }, 'Habits'));
     view.append(el('div', { class: 'card empty' }, el('span', { class: 'empty__emoji' }, '🌱'), el('div', {}, 'No habits yet.'),
       el('button', { class: 'btn btn--primary', style: 'margin-top:12px', onClick: () => { location.hash = '/habits'; } }, 'Add your first habit')));
-  } else if (!others.length) {
-    view.append(el('div', { class: 'card empty muted' }, 'All your habits are non-negotiables above.'));
   } else {
-    const c = el('div', { class: 'card' });
-    others.forEach((h) => c.append(habitLine(h, key, rerender)));
-    view.append(c);
+    for (const [val, label] of TIME_GROUPS) {
+      const group = others.filter((h) => (h.time || '') === val);
+      if (!group.length) continue;
+      view.append(el('div', { class: 'section-title' }, label));
+      const c = el('div', { class: 'card' });
+      group.forEach((h) => c.append(habitLine(h, key, rerender)));
+      view.append(c);
+    }
   }
 
   // Today's planned tasks (from the Tasks planner — for the selected day)
@@ -277,6 +285,7 @@ function render(view) {
 
   view.append(el('div', { class: 'section-title' }, 'Reflect'));
   view.append(checkinCard(key, rerender));
+  window.scrollTo(0, y);
 }
 
 export default { render };

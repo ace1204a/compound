@@ -4,7 +4,7 @@
 // a summary of your recent data to paste to Claude.
 // ============================================================
 
-import { getData, update, replaceAll, resetAll } from '../store.js';
+import { getData, update, replaceAll, resetAll, uid } from '../store.js';
 import { el, toast, confirmAction, todayKey, addDays } from '../ui.js';
 import * as sync from '../sync.js';
 import { computeStreaks } from './habits.js';
@@ -36,9 +36,15 @@ function importData(file, rerender) {
         update((d) => {
           for (const k of mods) {
             if (!(k in d) || k === 'settings') continue;
+            const val = parsed[k];
+            // { __append: [...] } adds items (with fresh ids) instead of replacing
+            if (val && typeof val === 'object' && Array.isArray(val.__append)) {
+              if (Array.isArray(d[k])) d[k].push(...val.__append.map((it) => ({ ...it, id: uid() })));
+              continue;
+            }
             // a plan patch must NOT wipe your day-by-day tick history
             if (k === 'plan') { const keepDone = d.plan.done || {}; d.plan = { ...parsed.plan, done: keepDone }; }
-            else d[k] = parsed[k];
+            else d[k] = val;
           }
         });
         toast('Patch applied ✓');
@@ -217,7 +223,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.9 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.10 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

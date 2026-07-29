@@ -1,200 +1,188 @@
 // ============================================================
-// Habits — daily / x-per-week habits with FORGIVING streaks.
-// Design choice (built around Ahmed's "write-off reflex"):
-//  - current streak counts up to today OR yesterday, so it
-//    never shows 0 just because today isn't ticked yet.
-//  - a slip doesn't shame you; "best" streak is always kept.
-//  - "keystone" habits are the non-negotiable minimum — the
-//    never-zero core that shows in the header score.
+// Habits — daily / x-per-week / COUNTER habits with FORGIVING
+// streaks. Habits can carry a time-of-day (morning/day/evening)
+// and a target (e.g. water 3 = tap +1 three times to complete).
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, addDays, weekStartKey, confirmAction } from '../ui.js';
 
-/** current + best consecutive-day streak from a habit's log. */
+export const TIME_GROUPS = [['morning', '🌅 Morning'], ['day', '☀️ Daytime'], ['evening', '🌙 Evening'], ['', '📌 Anytime']];
+
+// ---------- completion helpers (support counter habits) ----------
+export function habitCount(h, key) { const v = (h.log || {})[key]; return typeof v === 'number' ? v : (v ? 1 : 0); }
+export function habitTarget(h) { return Math.max(1, +h.target || 1); }
+export function dayComplete(h, key) { const t = habitTarget(h); return t > 1 ? habitCount(h, key) >= t : !!(h.log && h.log[key]); }
+export function isDoneOn(h, key) { return dayComplete(h, key); }
+export function isDoneToday(h) { return dayComplete(h, todayKey()); }
+
+/** current + best consecutive-day streak (a day counts once it's COMPLETE). */
 export function computeStreaks(habit) {
   const log = habit.log || {};
   let cursor = todayKey();
-  if (!log[cursor]) cursor = addDays(cursor, -1); // allow the streak to end yesterday
+  if (!dayComplete(habit, cursor)) cursor = addDays(cursor, -1);
   let current = 0;
-  while (log[cursor]) { current++; cursor = addDays(cursor, -1); }
+  while (dayComplete(habit, cursor)) { current++; cursor = addDays(cursor, -1); }
 
-  const days = Object.keys(log).filter((k) => log[k]).sort();
+  const days = Object.keys(log).filter((k) => dayComplete(habit, k)).sort();
   let best = 0, run = 0, prev = null;
-  for (const k of days) {
-    run = (prev && addDays(prev, 1) === k) ? run + 1 : 1;
-    if (run > best) best = run;
-    prev = k;
-  }
+  for (const k of days) { run = (prev && addDays(prev, 1) === k) ? run + 1 : 1; if (run > best) best = run; prev = k; }
   return { current, best: Math.max(best, current) };
 }
 
-/** number of times ticked in the current Mon–Sun week. */
 export function weekCount(habit) {
   const start = weekStartKey();
-  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
-  return days.filter((k) => habit.log && habit.log[k]).length;
+  return Array.from({ length: 7 }, (_, i) => addDays(start, i)).filter((k) => dayComplete(habit, k)).length;
 }
 
-export function isDoneToday(habit) { return !!(habit.log && habit.log[todayKey()]); }
-export function isDoneOn(habit, key) { return !!(habit.log && habit.log[key]); }
-
-export function toggleToday(habitId) { toggleHabitOn(habitId, todayKey()); }
-
-export function toggleHabitOn(habitId, key) {
+/** Tap a habit for a day: toggle simple habits, +1 (then reset) for counters. */
+export function tapHabit(habitId, key) {
   update((d) => {
     const h = d.habits.find((x) => x.id === habitId);
     if (!h) return;
     h.log = h.log || {};
-    if (h.log[key]) delete h.log[key]; else h.log[key] = true;
+    const t = habitTarget(h);
+    if (t <= 1) { if (h.log[key]) delete h.log[key]; else h.log[key] = true; return; }
+    const c = habitCount(h, key);
+    if (c >= t) delete h.log[key];            // full → tap resets
+    else h.log[key] = c + 1;                  // otherwise +1
   });
 }
+export function toggleHabitOn(habitId, key) { tapHabit(habitId, key); }
+export function toggleToday(habitId) { tapHabit(habitId, todayKey()); }
 
-/** last-7-days dot strip. */
 export function dotStrip(habit) {
   const start = addDays(todayKey(), -6);
   const wrap = el('span', { class: 'dots' });
   for (let i = 0; i < 7; i++) {
     const k = addDays(start, i);
-    const on = habit.log && habit.log[k];
-    const cls = 'dot' + (on ? ' on' : '') + (k === todayKey() ? ' today' : '');
+    const cls = 'dot' + (dayComplete(habit, k) ? ' on' : '') + (k === todayKey() ? ' today' : '');
     wrap.append(el('span', { class: cls, title: k }));
   }
   return wrap;
 }
 
 function cadenceLabel(h) {
-  if (h.cadence === 'daily') return 'Daily';
   if (h.cadence && h.cadence.perWeek) return `${weekCount(h)}/${h.cadence.perWeek} this week`;
   return 'Daily';
 }
 
-let editingId = null; // habit currently being renamed
-
-function habitRow(h, rerender) {
-  const { current, best } = computeStreaks(h);
-  const done = isDoneToday(h);
+// ---------- the tickable line (shared shape) ----------
+export function habitLine(h, key, rerender, { compact = false } = {}) {
+  const { current } = computeStreaks(h);
+  const target = habitTarget(h);
+  const count = habitCount(h, key);
+  const done = dayComplete(h, key);
   const tier = current >= 30 ? ' chip--t30' : current >= 7 ? ' chip--t7' : '';
 
-  // rename mode: swap the name for an input (history stays intact)
-  if (editingId === h.id) {
-    const input = el('input', { type: 'text', value: h.name, maxlength: '60' });
-    const saveName = () => {
-      const v = input.value.trim();
-      if (v) update((d) => { d.habits.find((a) => a.id === h.id).name = v; });
-      editingId = null; rerender();
-    };
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') { editingId = null; rerender(); } });
-    setTimeout(() => input.focus(), 0);
-    return el('div', { class: 'row' },
-      el('div', { class: 'row__main' }, input),
-      el('button', { class: 'btn btn--sm btn--primary', onClick: saveName }, 'Save'),
-      el('button', { class: 'btn btn--icon', onClick: () => { editingId = null; rerender(); } }, '×'));
-  }
-
   const meta = el('div', { class: 'row__meta' },
-    cadenceLabel(h),
+    target > 1 ? el('span', { class: 'chip' + (done ? ' chip--key' : '') }, `${count}/${target}${h.unit ? h.unit : ''}`) : null,
     current > 0 ? el('span', { class: 'chip chip--streak' + tier }, `🔥 ${current}`) : null,
-    best > 0 ? el('span', { class: 'chip chip--best' }, `best ${best}`) : null,
-    h.keystone ? el('span', { class: 'chip chip--key' }, 'non-negotiable') : null,
-  );
+    (!compact && h.cadence && h.cadence.perWeek) ? el('span', { class: 'chip' }, cadenceLabel(h)) : null,
+    (!compact && h.keystone) ? el('span', { class: 'chip chip--key' }, '★') : null);
 
   return el('div', { class: 'row' + (done ? ' done' : '') },
-    el('button', {
-      class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''),
-      'aria-label': 'Tick ' + h.name,
-      onClick: () => { toggleToday(h.id); rerender(); },
-    }),
-    el('div', { class: 'row__main' },
-      el('div', { class: 'row__name' }, h.name),
-      meta,
-      el('div', { style: 'margin-top:7px' }, dotStrip(h)),
-    ),
-    el('button', {
-      class: 'btn btn--icon', title: 'Rename (keeps your history)',
-      onClick: () => { editingId = h.id; rerender(); },
-    }, '✎'),
-    el('button', {
-      class: 'btn btn--icon', title: h.keystone ? 'Unmark non-negotiable' : 'Mark as non-negotiable',
-      onClick: () => { update((d) => { const x = d.habits.find((a) => a.id === h.id); x.keystone = !x.keystone; }); rerender(); },
-    }, h.keystone ? '★' : '☆'),
-    el('button', {
-      class: 'btn btn--icon', title: 'Delete habit',
-      onClick: () => { if (confirmAction(`Delete "${h.name}"? Its history goes too.`)) { update((d) => { d.habits = d.habits.filter((a) => a.id !== h.id); }); rerender(); } },
-    }, '×'),
-  );
+    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { tapHabit(h.id, key); rerender(); } },
+      target > 1 && !done ? el('span', { style: 'font-size:11px;font-weight:800' }, '+') : null),
+    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, h.name), meta),
+    !compact ? el('div', { style: 'margin-top:0' }, dotStrip(h)) : null);
+}
+
+// ---------- editor ----------
+let editingId = null;
+function editor(h, rerender) {
+  const name = el('input', { type: 'text', value: h.name, maxlength: '60' });
+  let cadence = h.cadence && h.cadence.perWeek ? 'weekly' : 'daily';
+  let perWeek = (h.cadence && h.cadence.perWeek) || 3;
+  let time = h.time || '';
+  let target = habitTarget(h);
+
+  const cadenceSeg = seg([['daily', 'Daily'], ['weekly', 'X / week']], cadence, (v) => { cadence = v; pw.style.display = v === 'weekly' ? '' : 'none'; });
+  const pw = el('div', { class: 'field', style: 'display:' + (cadence === 'weekly' ? '' : 'none') + ';margin-top:8px' },
+    el('span', {}, 'Times per week'), el('input', { type: 'number', min: '1', max: '7', value: perWeek, onInput: (e) => { perWeek = Math.max(1, Math.min(7, +e.target.value || 3)); } }));
+
+  const timeSeg = seg(TIME_GROUPS.map(([v, l]) => [v, l.replace(/^\S+\s/, '')]), time, (v) => { time = v; });
+
+  const unit = el('input', { type: 'text', value: h.unit || '', placeholder: 'unit (e.g. L, glasses)', maxlength: '8', style: 'max-width:150px' });
+  const targetIn = el('input', { type: 'number', min: '1', max: '20', value: target, style: 'max-width:90px', onInput: (e) => { target = Math.max(1, +e.target.value || 1); } });
+
+  function save() {
+    const n = name.value.trim(); if (!n) { toast('Needs a name'); return; }
+    update((d) => {
+      const x = d.habits.find((a) => a.id === h.id);
+      x.name = n;
+      x.cadence = cadence === 'daily' ? 'daily' : { perWeek };
+      x.time = time || null;
+      x.target = target;
+      x.unit = unit.value.trim();
+    });
+    editingId = null; toast('Saved'); rerender();
+  }
+
+  return el('div', { class: 'card card--accent' },
+    el('div', { class: 'field' }, el('span', {}, 'Name'), name),
+    el('div', { class: 'field' }, el('span', {}, 'How often'), cadenceSeg), pw,
+    el('div', { class: 'field', style: 'margin-top:8px' }, el('span', {}, 'Time of day'), timeSeg),
+    el('div', { class: 'field', style: 'margin-top:8px' }, el('span', {}, 'Target per day (set >1 for a counter like water)'),
+      el('div', { class: 'rowflex' }, targetIn, unit)),
+    el('div', { class: 'rowflex', style: 'margin-top:6px' },
+      el('button', { class: 'btn btn--primary', onClick: save }, 'Save'),
+      el('button', { class: 'btn', onClick: () => { editingId = null; rerender(); } }, 'Cancel'),
+      el('span', { class: 'spacer' }),
+      el('button', { class: 'btn btn--danger', onClick: () => { if (confirmAction(`Delete "${h.name}"? History goes too.`)) { update((d) => { d.habits = d.habits.filter((a) => a.id !== h.id); }); editingId = null; rerender(); } } }, 'Delete')));
+}
+
+function seg(options, current, onPick) {
+  const s = el('div', { class: 'seg', style: 'flex-wrap:wrap' });
+  options.forEach(([v, label]) => s.append(el('button', { class: v === current ? 'on' : '', onClick: (e) => { onPick(v); s.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.target)); } }, label)));
+  return s;
+}
+
+function fullRow(h, rerender) {
+  if (editingId === h.id) return editor(h, rerender);
+  const line = habitLine(h, todayKey(), rerender);
+  line.append(
+    el('button', { class: 'btn btn--icon', title: h.keystone ? 'Unmark ★' : 'Mark ★ non-negotiable', onClick: () => { update((d) => { const x = d.habits.find((a) => a.id === h.id); x.keystone = !x.keystone; }); rerender(); } }, h.keystone ? '★' : '☆'),
+    el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingId = h.id; rerender(); } }, '✎'));
+  return line;
 }
 
 function addForm(rerender) {
-  let cadence = 'daily';
-  let perWeek = 3;
-
   const name = el('input', { type: 'text', placeholder: 'New habit — e.g. Read 10 pages', maxlength: '60' });
-
-  const seg = el('div', { class: 'seg' },
-    el('button', { class: 'on', onClick: (e) => { cadence = 'daily'; setSeg(e.target); pw.style.display = 'none'; } }, 'Daily'),
-    el('button', { onClick: (e) => { cadence = 'weekly'; setSeg(e.target); pw.style.display = ''; } }, 'X / week'),
-  );
-  function setSeg(btn) { seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === btn)); }
-
-  const pw = el('div', { class: 'field', style: 'display:none;margin-top:10px' },
-    el('span', {}, 'Times per week'),
-    el('input', { type: 'number', min: '1', max: '7', value: '3', onInput: (e) => { perWeek = Math.max(1, Math.min(7, +e.target.value || 3)); } }),
-  );
-
   function submit() {
-    const n = name.value.trim();
-    if (!n) { toast('Give the habit a name'); return; }
-    update((d) => {
-      d.habits.push({
-        id: uid(), name: n,
-        cadence: cadence === 'daily' ? 'daily' : { perWeek },
-        keystone: false, createdAt: new Date().toISOString(), log: {},
-      });
-    });
-    toast('Habit added');
-    rerender();
+    const n = name.value.trim(); if (!n) { toast('Give the habit a name'); return; }
+    update((d) => { d.habits.push({ id: uid(), name: n, cadence: 'daily', keystone: false, time: null, target: 1, unit: '', createdAt: new Date().toISOString(), log: {} }); });
+    name.value = ''; toast('Habit added — tap ✎ to set time/target'); rerender();
   }
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-
-  return el('div', { class: 'card' },
-    el('div', { class: 'inline-form' }, name, el('button', { class: 'btn btn--primary', onClick: submit }, 'Add')),
-    el('div', { style: 'margin-top:10px' }, seg),
-    pw,
-    el('div', { class: 'hint' }, 'Tip: mark your 2–3 make-or-break habits as ★ non-negotiable. Those are your "never-zero" minimum.'),
-  );
+  return el('div', { class: 'card' }, el('div', { class: 'inline-form' }, name, el('button', { class: 'btn btn--primary', onClick: submit }, 'Add')),
+    el('div', { class: 'hint' }, 'Tip: ✎ to set a time of day, mark ★ non-negotiable, or make it a counter (water 3L).'));
 }
 
 function render(view) {
+  const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
+  const d = getData();
 
   view.append(el('div', { class: 'section-title' }, 'Habits'));
   view.append(addForm(rerender));
 
-  const d = getData();
-  if (d.habits.length === 0) {
-    view.append(el('div', { class: 'card empty' },
-      el('span', { class: 'empty__emoji' }, '🌱'),
-      el('div', {}, 'No habits yet. Add your first above.'),
-      el('div', { class: 'hint' }, 'Small reps, compounded. Start with one you can’t fail.')));
+  if (!d.habits.length) {
+    view.append(el('div', { class: 'card empty' }, el('span', { class: 'empty__emoji' }, '🌱'), el('div', {}, 'No habits yet. Add your first above.')));
     return;
   }
 
-  const keys = d.habits.filter((h) => h.keystone);
-  const rest = d.habits.filter((h) => !h.keystone);
-
-  if (keys.length) {
-    view.append(el('div', { class: 'section-title' }, '★ Non-negotiables'));
-    const c = el('div', { class: 'card card--accent' });
-    keys.forEach((h) => c.append(habitRow(h, rerender)));
+  // group by time of day
+  for (const [val, label] of TIME_GROUPS) {
+    const group = d.habits.filter((h) => (h.time || '') === val);
+    if (!group.length) continue;
+    view.append(el('div', { class: 'section-title' }, label));
+    const c = el('div', { class: 'card' });
+    group.forEach((h) => c.append(fullRow(h, rerender)));
     view.append(c);
   }
-  view.append(el('div', { class: 'section-title' }, keys.length ? 'Other habits' : 'All habits'));
-  const c2 = el('div', { class: 'card' });
-  rest.forEach((h) => c2.append(habitRow(h, rerender)));
-  if (!rest.length) c2.append(el('div', { class: 'empty muted' }, 'Everything here is a non-negotiable. Respect.'));
-  view.append(c2);
+  window.scrollTo(0, y);
 }
 
 export default { render };

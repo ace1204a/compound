@@ -351,6 +351,20 @@ input::placeholder, textarea::placeholder { color: var(--muted-2); }
 .exname { font-weight: 700; font-size: 15px; background: transparent; border: none; border-bottom: 1px dashed var(--line); padding: 4px 2px; width: 100%; }
 .exname:focus { border-bottom-color: var(--gold); }
 
+/* gym: previous-set fill button */
+.setrow__prev { background: transparent; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 11px; padding: 4px 2px; min-height: 38px; }
+.setrow__prev:hover { border-color: var(--gold); color: var(--gold); }
+
+/* gym: rest timer */
+.rest { margin: 10px 0 4px; }
+.rest__bar { height: 8px; border-radius: 5px; background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.rest__fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--green)); transition: width .25s linear; }
+.rest__disp { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 52px; text-align: center; color: var(--gold); }
+
+/* gym: exercise library items */
+.libitem { display: block; width: 100%; text-align: left; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text); margin-bottom: 6px; font-weight: 600; }
+.libitem:hover { border-color: var(--gold); }
+
 /* sync status dot */
 .syncdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--muted-2); vertical-align: 1px; }
 .syncdot--ok { background: var(--green); }

@@ -9,7 +9,7 @@
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays, prettyDate } from '../ui.js';
 import { computeStreaks, isDoneOn, toggleHabitOn, weekCount } from './habits.js';
-import { toggleTask } from './tasks.js';
+import { tasksForDay, toggleTaskItem } from './tasks.js';
 import { nowAndNext, dayProgress, isBlockDone, toggleBlock } from './plan.js';
 
 // which day we're looking at (persists while the app is open)
@@ -172,11 +172,6 @@ function habitLine(h, key, rerender) {
         weekly ? el('span', { class: 'chip' }, `${weekCount(h)}/${h.cadence.perWeek} wk`) : null)));
 }
 
-function taskLine(t, rerender) {
-  return el('div', { class: 'row' + (t.done ? ' done' : '') },
-    el('button', { class: 'check' + (t.done ? ' on' : ''), 'aria-label': 'Complete', onClick: () => { toggleTask(t.id); rerender(); } }),
-    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, t.title)));
-}
 
 // ---------- Evening check-in (for the selected day) ----------
 function ratingBars() {
@@ -269,15 +264,15 @@ function render(view) {
     view.append(c);
   }
 
-  // Today's tasks (today only — tasks aren't per-day)
-  if (isToday) {
-    const todayTasks = d.tasks.filter((t) => t.bucket === 'today');
-    if (todayTasks.length) {
-      view.append(el('div', { class: 'section-title' }, 'Tasks'));
-      const c = el('div', { class: 'card' });
-      todayTasks.sort((a, b) => (a.done === b.done) ? 0 : a.done ? 1 : -1).forEach((t) => c.append(taskLine(t, rerender)));
-      view.append(c);
-    }
+  // Today's planned tasks (from the Tasks planner — for the selected day)
+  const dayTasks = tasksForDay(d, key);
+  if (dayTasks.length) {
+    view.append(el('div', { class: 'section-title' }, 'Tasks'));
+    const c = el('div', { class: 'card' });
+    dayTasks.forEach((it) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
+      el('button', { class: 'check' + (it.done ? ' on' : ''), 'aria-label': 'Tick', onClick: () => { toggleTaskItem(it, key); rerender(); } }),
+      el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, it.time ? el('span', { class: 'chip', style: 'margin-right:8px' }, it.time) : null, it.title)))));
+    view.append(c);
   }
 
   view.append(el('div', { class: 'section-title' }, 'Reflect'));

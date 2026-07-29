@@ -8,7 +8,7 @@
 
 import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
-const SYNC_MODULES = ['habits', 'daily', 'tasks', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'plan'];
+const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'plan'];
 const META_KEY = 'compound.sync.meta.v1';
 
 let client = null;
@@ -140,6 +140,17 @@ export const MERGERS = {
     }
     return out;
   },
+  tasks(local, remote) {
+    const byId = new Map(remote.map((t) => [t.id, t]));
+    const out = local.map((l) => { const r = byId.get(l.id); if (!r) return l; byId.delete(l.id); return { ...r, ...l, done: l.done || r.done }; });
+    return [...out, ...byId.values()];
+  },
+  routines(local, remote) {
+    const byId = new Map(remote.map((t) => [t.id, t]));
+    const out = local.map((l) => { const r = byId.get(l.id); if (!r) return l; byId.delete(l.id); return { ...r, ...l }; });
+    return [...out, ...byId.values()];
+  },
+  routineDone(local, remote) { return { ...remote, ...local }; },
   checkins(local, remote) {
     const out = { ...remote };
     for (const [k, v] of Object.entries(local)) {

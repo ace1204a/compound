@@ -21,7 +21,9 @@ function defaultData() {
     },
     habits: [],   // { id, name, cadence:'daily'|{perWeek:n}, keystone:bool, createdAt, log:{ 'YYYY-MM-DD': true } }
     daily: {},    // 'YYYY-MM-DD' -> [ { id, text, done } ]  — the frictionless daily checklist
-    tasks: [],    // { id, title, bucket:'today'|'upcoming'|'someday', project, done, createdAt, completedAt }
+    tasks: [],    // { id, title, date:'YYYY-MM-DD'|null, time:'HH:MM'|null, project, done, order, createdAt, completedAt }
+    routines: [], // { id, title, time:'HH:MM'|null, freq:'daily'|{days:[0-6]}, project }  — repeatable tasks
+    routineDone: {}, // 'routineId:YYYY-MM-DD' -> true
     checkins: {}, // 'YYYY-MM-DD' -> { rating, win, lesson, updatedAt }
     goals: [],    // { id, area, title, why, status:'active'|'done', createdAt }
     gym: {

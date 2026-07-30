@@ -8,12 +8,13 @@
 
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays, prettyDate } from '../ui.js';
-import { computeStreaks, isDoneOn, tapHabit, weekCount, habitCount, habitTarget, TIME_GROUPS } from './habits.js';
+import { computeStreaks, isDoneOn, weekCount, habitCount, habitTarget, TIME_GROUPS, checkControl } from './habits.js';
 import { tasksForDay, toggleTaskItem } from './tasks.js';
 import { nowAndNext, dayProgress, isBlockDone, toggleBlock } from './plan.js';
 
 // which day we're looking at (persists while the app is open)
 let selectedKey = todayKey();
+let arrangeMode = false;
 
 const LINES = [
   'Small reps, compounded.',
@@ -165,8 +166,7 @@ function habitLine(h, key, rerender) {
   const weekly = h.cadence && h.cadence.perWeek;
   const target = habitTarget(h), count = habitCount(h, key);
   return el('div', { class: 'row' + (done ? ' done' : '') },
-    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { tapHabit(h.id, key); rerender(); } },
-      target > 1 && !done ? el('span', { style: 'font-size:11px;font-weight:800' }, '+') : null),
+    checkControl(h, key, rerender),
     el('div', { class: 'row__main' },
       el('div', { class: 'row__name' }, h.name),
       el('div', { class: 'row__meta' },
@@ -241,51 +241,73 @@ function render(view) {
 
   if (isToday) { const nc = nowCard(rerender); if (nc) view.append(nc); }
 
-  view.append(el('div', { class: 'section-title' }, 'Checklist'));
-  view.append(dailyList(key, rerender));
-
-  // Non-negotiables
-  const keystones = d.habits.filter((h) => h.keystone);
-  if (keystones.length) {
-    const doneCount = keystones.filter((h) => isDoneOn(h, key)).length;
-    view.append(el('div', { class: 'section-title' }, '★ Non-negotiables'));
-    if (doneCount === keystones.length) view.append(el('div', { class: 'banner' }, '✅ Didn’t zero — a chain that never breaks.'));
-    const c = el('div', { class: 'card card--accent' });
-    keystones.forEach((h) => c.append(habitLine(h, key, rerender)));
-    view.append(c);
-  }
-
-  // remaining habits, grouped by time of day
-  const others = d.habits.filter((h) => !h.keystone);
-  if (!d.habits.length) {
-    view.append(el('div', { class: 'section-title' }, 'Habits'));
-    view.append(el('div', { class: 'card empty' }, el('span', { class: 'empty__emoji' }, '🌱'), el('div', {}, 'No habits yet.'),
-      el('button', { class: 'btn btn--primary', style: 'margin-top:12px', onClick: () => { location.hash = '/habits'; } }, 'Add your first habit')));
-  } else {
-    for (const [val, label] of TIME_GROUPS) {
-      const group = others.filter((h) => (h.time || '') === val);
-      if (!group.length) continue;
-      view.append(el('div', { class: 'section-title' }, label));
+  // ---- reorderable sections ----
+  const builders = {
+    checklist: () => [el('div', { class: 'section-title' }, 'Checklist'), dailyList(key, rerender)],
+    nonneg: () => {
+      const keystones = d.habits.filter((h) => h.keystone);
+      if (!keystones.length) return null;
+      const doneCount = keystones.filter((h) => isDoneOn(h, key)).length;
+      const nodes = [el('div', { class: 'section-title' }, '★ Non-negotiables')];
+      if (doneCount === keystones.length) nodes.push(el('div', { class: 'banner' }, '✅ Didn’t zero — a chain that never breaks.'));
+      const c = el('div', { class: 'card card--accent' });
+      keystones.forEach((h) => c.append(habitLine(h, key, rerender)));
+      nodes.push(c); return nodes;
+    },
+    habits: () => {
+      const others = d.habits.filter((h) => !h.keystone);
+      if (!d.habits.length) return [el('div', { class: 'section-title' }, 'Habits'),
+        el('div', { class: 'card empty' }, el('span', { class: 'empty__emoji' }, '🌱'), el('div', {}, 'No habits yet.'),
+          el('button', { class: 'btn btn--primary', style: 'margin-top:12px', onClick: () => { location.hash = '/habits'; } }, 'Add your first habit'))];
+      const nodes = [];
+      for (const [val, label] of TIME_GROUPS) {
+        const group = others.filter((h) => (h.time || '') === val).sort((a, b) => (a.order || 0) - (b.order || 0));
+        if (!group.length) continue;
+        nodes.push(el('div', { class: 'section-title' }, label));
+        const c = el('div', { class: 'card' });
+        group.forEach((h) => c.append(habitLine(h, key, rerender)));
+        nodes.push(c);
+      }
+      return nodes.length ? nodes : null;
+    },
+    tasks: () => {
+      const dayTasks = tasksForDay(d, key);
+      if (!dayTasks.length) return null;
       const c = el('div', { class: 'card' });
-      group.forEach((h) => c.append(habitLine(h, key, rerender)));
-      view.append(c);
+      dayTasks.forEach((it) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
+        el('button', { class: 'check' + (it.done ? ' on' : ''), 'aria-label': 'Tick', onClick: () => { toggleTaskItem(it, key); rerender(); } }),
+        el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, it.time ? el('span', { class: 'chip', style: 'margin-right:8px' }, it.time) : null, it.title)))));
+      return [el('div', { class: 'section-title' }, 'Tasks'), c];
+    },
+    reflect: () => [el('div', { class: 'section-title' }, 'Reflect'), checkinCard(key, rerender)],
+  };
+  const DEFAULT_ORDER = ['checklist', 'nonneg', 'habits', 'tasks', 'reflect'];
+  const stored = (d.settings.todayOrder || []).filter((id) => builders[id]);
+  const order = [...stored, ...DEFAULT_ORDER.filter((id) => !stored.includes(id))];
+  const LABELS = { checklist: 'Checklist', nonneg: 'Non-negotiables', habits: 'Habits', tasks: 'Tasks', reflect: 'Reflect' };
+
+  // arrange toggle
+  view.append(el('div', { class: 'rowflex', style: 'justify-content:flex-end;margin:2px 0' },
+    el('button', { class: 'btn btn--sm' + (arrangeMode ? ' btn--primary' : ' btn--ghost'), onClick: () => { arrangeMode = !arrangeMode; rerender(); } }, arrangeMode ? '✓ Done arranging' : '⇅ Arrange')));
+
+  order.forEach((id, i) => {
+    if (arrangeMode) {
+      view.append(el('div', { class: 'arrange' },
+        el('span', {}, LABELS[id] || id),
+        el('span', { class: 'spacer' }),
+        i > 0 ? el('button', { class: 'btn btn--icon', onClick: () => { moveSection(order, i, -1); rerender(); } }, '↑') : null,
+        i < order.length - 1 ? el('button', { class: 'btn btn--icon', onClick: () => { moveSection(order, i, 1); rerender(); } }, '↓') : null));
     }
-  }
-
-  // Today's planned tasks (from the Tasks planner — for the selected day)
-  const dayTasks = tasksForDay(d, key);
-  if (dayTasks.length) {
-    view.append(el('div', { class: 'section-title' }, 'Tasks'));
-    const c = el('div', { class: 'card' });
-    dayTasks.forEach((it) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
-      el('button', { class: 'check' + (it.done ? ' on' : ''), 'aria-label': 'Tick', onClick: () => { toggleTaskItem(it, key); rerender(); } }),
-      el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, it.time ? el('span', { class: 'chip', style: 'margin-right:8px' }, it.time) : null, it.title)))));
-    view.append(c);
-  }
-
-  view.append(el('div', { class: 'section-title' }, 'Reflect'));
-  view.append(checkinCard(key, rerender));
+    const nodes = builders[id] && builders[id]();
+    if (nodes) nodes.forEach((n) => view.append(n));
+  });
   window.scrollTo(0, y);
+}
+
+function moveSection(order, i, dir) {
+  const j = i + dir; if (j < 0 || j >= order.length) return;
+  const next = [...order]; const t = next[i]; next[i] = next[j]; next[j] = t;
+  update((d) => { d.settings.todayOrder = next; });
 }
 
 export default { render };

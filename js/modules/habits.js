@@ -51,6 +51,30 @@ export function tapHabit(habitId, key) {
 export function toggleHabitOn(habitId, key) { tapHabit(habitId, key); }
 export function toggleToday(habitId) { tapHabit(habitId, todayKey()); }
 
+/** Counter habits: step the count by +1/-1, clamped 0..target (no reset, no overshoot). */
+export function stepHabit(habitId, key, delta) {
+  update((d) => {
+    const h = d.habits.find((x) => x.id === habitId);
+    if (!h) return;
+    h.log = h.log || {};
+    const t = habitTarget(h);
+    const v = Math.max(0, Math.min(t, habitCount(h, key) + delta));
+    if (v === 0) delete h.log[key]; else h.log[key] = v;
+  });
+}
+
+/** The left-hand control: a single check for simple habits, a −/+ stepper for counters. */
+export function checkControl(h, key, rerender) {
+  const target = habitTarget(h);
+  const done = dayComplete(h, key);
+  if (target <= 1) {
+    return el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { tapHabit(h.id, key); rerender(); } });
+  }
+  return el('div', { class: 'stepper' },
+    el('button', { class: 'btn btn--icon', 'aria-label': 'minus', onClick: () => { stepHabit(h.id, key, -1); rerender(); } }, '−'),
+    el('button', { class: 'check check--gold' + (done ? ' on' : ''), 'aria-label': 'plus', onClick: () => { stepHabit(h.id, key, 1); rerender(); } }, done ? null : '+'));
+}
+
 export function dotStrip(habit) {
   const start = addDays(todayKey(), -6);
   const wrap = el('span', { class: 'dots' });
@@ -82,8 +106,7 @@ export function habitLine(h, key, rerender, { compact = false } = {}) {
     (!compact && h.keystone) ? el('span', { class: 'chip chip--key' }, '★') : null);
 
   return el('div', { class: 'row' + (done ? ' done' : '') },
-    el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { tapHabit(h.id, key); rerender(); } },
-      target > 1 && !done ? el('span', { style: 'font-size:11px;font-weight:800' }, '+') : null),
+    checkControl(h, key, rerender),
     el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, h.name), meta),
     !compact ? el('div', { style: 'margin-top:0' }, dotStrip(h)) : null);
 }
@@ -138,10 +161,25 @@ function seg(options, current, onPick) {
   return s;
 }
 
-function fullRow(h, rerender) {
+function reorderInGroup(h, dir) {
+  update((d) => {
+    const group = d.habits.filter((x) => (x.time || '') === (h.time || ''));
+    group.sort((a, b) => (a.order || 0) - (b.order || 0));
+    group.forEach((g, i) => { d.habits.find((x) => x.id === g.id).order = i; }); // normalise
+    const idx = group.findIndex((x) => x.id === h.id);
+    const j = idx + dir;
+    if (j < 0 || j >= group.length) return;
+    const A = d.habits.find((x) => x.id === group[idx].id), B = d.habits.find((x) => x.id === group[j].id);
+    const tmp = A.order; A.order = B.order; B.order = tmp;
+  });
+}
+
+function fullRow(h, rerender, pos) {
   if (editingId === h.id) return editor(h, rerender);
   const line = habitLine(h, todayKey(), rerender);
   line.append(
+    pos.i > 0 ? el('button', { class: 'btn btn--icon', title: 'Up', onClick: () => { reorderInGroup(h, -1); rerender(); } }, '↑') : null,
+    pos.i < pos.n - 1 ? el('button', { class: 'btn btn--icon', title: 'Down', onClick: () => { reorderInGroup(h, 1); rerender(); } }, '↓') : null,
     el('button', { class: 'btn btn--icon', title: h.keystone ? 'Unmark ★' : 'Mark ★ non-negotiable', onClick: () => { update((d) => { const x = d.habits.find((a) => a.id === h.id); x.keystone = !x.keystone; }); rerender(); } }, h.keystone ? '★' : '☆'),
     el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingId = h.id; rerender(); } }, '✎'));
   return line;
@@ -173,13 +211,13 @@ function render(view) {
     return;
   }
 
-  // group by time of day
+  // group by time of day (ordered within each group)
   for (const [val, label] of TIME_GROUPS) {
-    const group = d.habits.filter((h) => (h.time || '') === val);
+    const group = d.habits.filter((h) => (h.time || '') === val).sort((a, b) => (a.order || 0) - (b.order || 0));
     if (!group.length) continue;
     view.append(el('div', { class: 'section-title' }, label));
     const c = el('div', { class: 'card' });
-    group.forEach((h) => c.append(fullRow(h, rerender)));
+    group.forEach((h, i) => c.append(fullRow(h, rerender, { i, n: group.length })));
     view.append(c);
   }
   window.scrollTo(0, y);

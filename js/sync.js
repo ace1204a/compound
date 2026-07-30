@@ -8,7 +8,7 @@
 
 import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
-const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'plan'];
+const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'journal', 'plan'];
 const META_KEY = 'compound.sync.meta.v1';
 
 let client = null;
@@ -136,6 +136,16 @@ export const MERGERS = {
         const r = byId.get(i.id);
         byId.set(i.id, r ? { ...r, ...i, done: i.done || r.done } : i);
       }
+      out[date] = [...byId.values()];
+    }
+    return out;
+  },
+  journal(local, remote) {
+    // per date: union entries by id (local text wins on conflict)
+    const out = { ...remote };
+    for (const [date, items] of Object.entries(local || {})) {
+      const byId = new Map((out[date] || []).map((i) => [i.id, i]));
+      for (const i of items) byId.set(i.id, { ...(byId.get(i.id) || {}), ...i });
       out[date] = [...byId.values()];
     }
     return out;

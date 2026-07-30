@@ -19,6 +19,7 @@ import trading from './modules/trading.js';
 import inbox from './modules/inbox.js';
 import finance from './modules/finance.js';
 import books from './modules/books.js';
+import journal from './modules/journal.js';
 import settings from './modules/settings.js';
 
 // The order here is the order of the bottom tab bar.
@@ -34,6 +35,7 @@ const MODULES = [
   { id: 'inbox',    label: 'Inbox',   icon: '⬇', mod: inbox },
   { id: 'finance',  label: 'Money',   icon: '£',  mod: finance },
   { id: 'books',    label: 'Books',   icon: '❒', mod: books },
+  { id: 'journal',  label: 'Journal', icon: '✎', mod: journal },
   { id: 'settings', label: 'Settings',icon: '⚙', mod: settings },
 ];
 

@@ -7,7 +7,7 @@
 // Bump VERSION on every deploy to invalidate old caches.
 // ============================================================
 
-const VERSION = 'compound-v14';
+const VERSION = 'compound-v15';
 const CORE = [
   './',
   './index.html',
@@ -29,6 +29,7 @@ const CORE = [
   './js/modules/inbox.js',
   './js/modules/finance.js',
   './js/modules/books.js',
+  './js/modules/journal.js',
   './js/modules/settings.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

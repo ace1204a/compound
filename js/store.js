@@ -48,6 +48,7 @@ function defaultData() {
       months: [],     // { id, month:'YYYY-MM', income, spend, saved }
     },
     books: [],        // { id, title, author, status, notes, highlights:[], sessions:[{date,pages}], addedAt }
+    journal: {},      // 'YYYY-MM-DD' -> [ { id, time:'HH:MM', text } ]  — running diary through the day
     plan: {           // the living protocol — content arrives via plan patches, never hardcoded
       updated: '',
       note: '',

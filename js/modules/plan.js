@@ -129,6 +129,7 @@ function sectionCard(s) {
 }
 
 function render(view) {
+  const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   const d = getData();
@@ -136,25 +137,30 @@ function render(view) {
 
   view.append(el('div', { class: 'section-title' }, 'The Plan'));
 
-  if (!plan.day.length && !plan.sections.length && !plan.sleep) {
+  if (!plan.sections.length && !plan.sleep) {
     view.append(el('div', { class: 'card empty' },
       el('span', { class: 'empty__emoji' }, '📋'),
-      el('div', {}, 'No plan loaded yet.'),
-      el('div', { class: 'hint' }, 'Import the plan patch from Claude in Settings → Import, or build your day below.')));
-    view.append(scheduleCard(plan, rerender));
+      el('div', {}, 'No protocols loaded yet.'),
+      el('div', { class: 'hint' }, 'Import a plan patch from Claude in Settings → Import.')));
+    window.scrollTo(0, y);
     return;
   }
 
-  if (plan.note) view.append(el('div', { class: 'banner banner--gold' }, plan.note));
+  // The Plan is now your REFERENCE — the standards. Your live timed
+  // schedule lives in Tasks (routines + timed tasks).
+  view.append(el('div', { class: 'banner banner--gold' },
+    '📋 This is your reference — the standards to hold. Your live day-by-day schedule lives in ',
+    el('a', { href: '#/tasks', style: 'color:var(--gold);font-weight:700' }, 'Tasks →')));
+
   const sc = sleepCard(plan);
   if (sc) view.append(sc);
-  view.append(scheduleCard(plan, rerender));
 
   if (plan.sections.length) {
     view.append(el('div', { class: 'section-title' }, 'Protocols · tap to open'));
     plan.sections.forEach((s) => view.append(sectionCard(s)));
   }
   if (plan.updated) view.append(el('div', { class: 'hint', style: 'text-align:center' }, `plan version: ${plan.updated}`));
+  window.scrollTo(0, y);
 }
 
 export default { render };

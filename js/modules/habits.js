@@ -70,9 +70,10 @@ export function checkControl(h, key, rerender) {
   if (target <= 1) {
     return el('button', { class: 'check' + (h.keystone ? ' check--gold' : '') + (done ? ' on' : ''), 'aria-label': 'Tick ' + h.name, onClick: () => { tapHabit(h.id, key); rerender(); } });
   }
+  // check first (so it aligns with every other habit's check), minus to its right
   return el('div', { class: 'stepper' },
-    el('button', { class: 'btn btn--icon', 'aria-label': 'minus', onClick: () => { stepHabit(h.id, key, -1); rerender(); } }, '−'),
-    el('button', { class: 'check check--gold' + (done ? ' on' : ''), 'aria-label': 'plus', onClick: () => { stepHabit(h.id, key, 1); rerender(); } }, done ? null : '+'));
+    el('button', { class: 'check check--gold' + (done ? ' on' : ''), 'aria-label': 'plus', onClick: () => { stepHabit(h.id, key, 1); rerender(); } }, done ? null : '+'),
+    el('button', { class: 'btn btn--icon stepper__minus', 'aria-label': 'minus', onClick: () => { stepHabit(h.id, key, -1); rerender(); } }, '−'));
 }
 
 export function dotStrip(habit) {
@@ -177,11 +178,12 @@ function reorderInGroup(h, dir) {
 function fullRow(h, rerender, pos) {
   if (editingId === h.id) return editor(h, rerender);
   const line = habitLine(h, todayKey(), rerender);
-  line.append(
-    pos.i > 0 ? el('button', { class: 'btn btn--icon', title: 'Up', onClick: () => { reorderInGroup(h, -1); rerender(); } }, '↑') : null,
-    pos.i < pos.n - 1 ? el('button', { class: 'btn btn--icon', title: 'Down', onClick: () => { reorderInGroup(h, 1); rerender(); } }, '↓') : null,
-    el('button', { class: 'btn btn--icon', title: h.keystone ? 'Unmark ★' : 'Mark ★ non-negotiable', onClick: () => { update((d) => { const x = d.habits.find((a) => a.id === h.id); x.keystone = !x.keystone; }); rerender(); } }, h.keystone ? '★' : '☆'),
-    el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingId = h.id; rerender(); } }, '✎'));
+  // fixed-width reorder slots so nothing shifts (and no "null" from empty arrows)
+  const up = el('button', { class: 'btn btn--icon', title: 'Up', disabled: pos.i === 0 ? '' : null, onClick: () => { if (pos.i > 0) { reorderInGroup(h, -1); rerender(); } } }, '↑');
+  const down = el('button', { class: 'btn btn--icon', title: 'Down', disabled: pos.i === pos.n - 1 ? '' : null, onClick: () => { if (pos.i < pos.n - 1) { reorderInGroup(h, 1); rerender(); } } }, '↓');
+  const star = el('button', { class: 'btn btn--icon', title: h.keystone ? 'Unmark ★' : 'Mark ★ non-negotiable', onClick: () => { update((d) => { const x = d.habits.find((a) => a.id === h.id); x.keystone = !x.keystone; }); rerender(); } }, h.keystone ? '★' : '☆');
+  const edit = el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingId = h.id; rerender(); } }, '✎');
+  [up, down, star, edit].forEach((n) => line.append(n));
   return line;
 }
 

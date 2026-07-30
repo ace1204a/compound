@@ -41,6 +41,17 @@ export function tasksForDay(d, key) {
   return all;
 }
 
+/** Which timed task are we in right now (and what's next)? Powers the Today NOW card. */
+export function nowAndNextTask(d, key) {
+  const items = tasksForDay(d, key).filter((i) => timeToMin(i.time) != null);
+  if (!items.length) return { current: null, next: null };
+  const now = new Date().getHours() * 60 + new Date().getMinutes();
+  let current = null;
+  for (const it of items) if (timeToMin(it.time) <= now) current = it;
+  const next = current ? (items[items.indexOf(current) + 1] || null) : items[0];
+  return { current, next };
+}
+
 export function toggleTaskItem(item, key) {
   if (item.kind === 'routine') {
     update((d) => { const k = item.routineId + ':' + key; if (d.routineDone[k]) delete d.routineDone[k]; else d.routineDone[k] = true; });

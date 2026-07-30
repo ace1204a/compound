@@ -9,8 +9,7 @@
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays, prettyDate } from '../ui.js';
 import { computeStreaks, isDoneOn, weekCount, habitCount, habitTarget, TIME_GROUPS, checkControl } from './habits.js';
-import { tasksForDay, toggleTaskItem } from './tasks.js';
-import { nowAndNext, dayProgress, isBlockDone, toggleBlock } from './plan.js';
+import { tasksForDay, toggleTaskItem, nowAndNextTask } from './tasks.js';
 
 // which day we're looking at (persists while the app is open)
 let selectedKey = todayKey();
@@ -92,28 +91,27 @@ function hero(key) {
     el('button', { class: 'btn btn--sm', style: 'margin-top:10px', onClick: () => { selectedKey = todayKey(); render(document.getElementById('view')); } }, '→ Back to today'));
 }
 
-// ---------- NOW / NEXT (today only) ----------
+// ---------- NOW / NEXT (today only) — driven by the Tasks planner ----------
 function nowCard(rerender) {
   const d = getData();
-  const { current, next } = nowAndNext(d.plan.day);
-  if (!current && !next) return null;
-  const { done, total } = dayProgress(d);
+  const items = tasksForDay(d, todayKey());
+  const { current, next } = nowAndNextTask(d, todayKey());
+  if (!items.length && !current) return null;
+  const total = items.length, done = items.filter((i) => i.done).length;
 
   const card = el('div', { class: 'card nowcard' });
   if (current) {
-    const ticked = isBlockDone(d, current.id);
     card.append(el('div', { class: 'rowflex', style: 'align-items:flex-start' },
-      el('button', { class: 'check check--gold' + (ticked ? ' on' : ''), 'aria-label': 'Tick this block', onClick: () => { toggleBlock(current.id); rerender(); } }),
+      el('button', { class: 'check check--gold' + (current.done ? ' on' : ''), 'aria-label': 'Tick this', onClick: () => { toggleTaskItem(current, todayKey()); rerender(); } }),
       el('div', { class: 'row__main' },
         el('div', { class: 'nowcard__label' }, `NOW · since ${current.time}`),
-        el('div', { class: 'nowcard__title' }, current.title),
-        current.detail ? el('div', { class: 'card__sub' }, current.detail) : null)));
+        el('div', { class: 'nowcard__title' }, current.title))));
   } else {
     card.append(el('div', { class: 'nowcard__label' }, 'DAY NOT STARTED'));
   }
   if (total) card.append(el('div', { class: 'progress', style: 'margin-top:12px' }, el('div', { class: 'progress__fill', style: `width:${(done / total) * 100}%` })));
-  card.append(el('div', { class: 'nowcard__next', onClick: () => { location.hash = '/plan'; }, style: 'cursor:pointer' },
-    next ? `Next → ${next.time} · ${next.title}${next.tomorrow ? ' (tomorrow)' : ''}` : 'Plan complete',
+  card.append(el('div', { class: 'nowcard__next', onClick: () => { location.hash = '/tasks'; }, style: 'cursor:pointer' },
+    next ? `Next → ${next.time} · ${next.title}` : 'Schedule clear',
     total ? el('span', { class: 'spacer' }) : null,
     total ? el('span', { class: 'chip' + (done === total ? ' chip--key' : '') }, `${done}/${total} today`) : null));
   return card;

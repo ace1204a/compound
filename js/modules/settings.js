@@ -7,6 +7,7 @@
 import { getData, update, replaceAll, resetAll, uid } from '../store.js';
 import { el, toast, confirmAction, todayKey, addDays } from '../ui.js';
 import * as sync from '../sync.js';
+import { TABS, LOCKED, orderedIds } from '../tabs.js';
 import { computeStreaks } from './habits.js';
 import { cleanStreak } from './diet.js';
 import { cleanRun } from './trading.js';
@@ -136,6 +137,47 @@ async function copyBrief() {
   catch { window.prompt('Copy this:', text); }
 }
 
+// ---------- Customise tabs ----------
+function moveTab(id, dir) {
+  update((d) => {
+    const order = orderedIds(d.settings);
+    const i = order.indexOf(id), j = i + dir;
+    if (j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    d.settings.tabOrder = order;
+  });
+}
+function toggleHide(id) {
+  if (LOCKED.includes(id)) return;
+  update((d) => {
+    const set = new Set(d.settings.tabHidden || []);
+    if (set.has(id)) set.delete(id); else set.add(id);
+    d.settings.tabHidden = [...set];
+  });
+}
+function tabsCard(rerender) {
+  const d = getData();
+  const order = orderedIds(d.settings);
+  const hidden = new Set(d.settings.tabHidden || []);
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'Customise tabs'));
+  card.append(el('div', { class: 'card__sub', style: 'margin-bottom:10px' }, 'Reorder or hide the bottom bar. Today & Settings always stay.'));
+  order.forEach((id, i) => {
+    const t = TABS.find((x) => x.id === id);
+    const locked = LOCKED.includes(id);
+    const isHidden = hidden.has(id);
+    card.append(el('div', { class: 'row' + (isHidden ? ' done' : '') },
+      el('span', { class: 'tab__i', style: 'width:26px;text-align:center;font-size:16px' }, t.icon),
+      el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, t.label)),
+      el('button', { class: 'btn btn--icon', disabled: i === 0 ? '' : null, onClick: () => { moveTab(id, -1); rerender(); } }, '↑'),
+      el('button', { class: 'btn btn--icon', disabled: i === order.length - 1 ? '' : null, onClick: () => { moveTab(id, 1); rerender(); } }, '↓'),
+      locked
+        ? el('span', { class: 'chip' }, 'shown')
+        : el('button', { class: 'btn btn--sm' + (isHidden ? ' btn--ghost' : ''), onClick: () => { toggleHide(id); rerender(); } }, isHidden ? 'Hidden' : 'Shown')));
+  });
+  return card;
+}
+
 // ---------- Cloud sync card ----------
 function syncCard(rerender) {
   const d = getData();
@@ -206,6 +248,9 @@ function render(view) {
     el('div', { class: 'inline-form' }, name,
       el('button', { class: 'btn btn--primary', onClick: () => { update((x) => { x.settings.name = name.value.trim() || 'friend'; }); toast('Saved'); } }, 'Save'))));
 
+  // Customise tabs
+  view.append(tabsCard(rerender));
+
   // Sync
   view.append(syncCard(rerender));
 
@@ -223,7 +268,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.12 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.13 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

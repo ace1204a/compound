@@ -22,22 +22,13 @@ import books from './modules/books.js';
 import journal from './modules/journal.js';
 import settings from './modules/settings.js';
 
-// The order here is the order of the bottom tab bar.
-const MODULES = [
-  { id: 'today',    label: 'Today',   icon: '◎', mod: today },
-  { id: 'plan',     label: 'Plan',    icon: '▤', mod: plan },
-  { id: 'habits',   label: 'Habits',  icon: '✓', mod: habits },
-  { id: 'tasks',    label: 'Tasks',   icon: '☰', mod: tasks },
-  { id: 'goals',    label: 'Goals',   icon: '◆', mod: goals },
-  { id: 'gym',      label: 'Gym',     icon: '⟰', mod: gym },
-  { id: 'diet',     label: 'Diet',    icon: '◍', mod: diet },
-  { id: 'trading',  label: 'Trading', icon: '⇅', mod: trading },
-  { id: 'inbox',    label: 'Inbox',   icon: '⬇', mod: inbox },
-  { id: 'finance',  label: 'Money',   icon: '£',  mod: finance },
-  { id: 'books',    label: 'Books',   icon: '❒', mod: books },
-  { id: 'journal',  label: 'Journal', icon: '✎', mod: journal },
-  { id: 'settings', label: 'Settings',icon: '⚙', mod: settings },
-];
+import { TABS, visibleIds } from './tabs.js';
+
+// tab id -> render module
+const REG = { today, plan, habits, tasks, goals, gym, diet, trading, inbox, finance, books, journal, settings };
+// full registry: tab metadata + its render module
+const MODULES = TABS.map((t) => ({ ...t, mod: REG[t.id] }));
+const BY_ID = Object.fromEntries(MODULES.map((m) => [m.id, m]));
 
 const viewEl = document.getElementById('view');
 const tabsEl = document.getElementById('tabs');
@@ -49,7 +40,8 @@ function currentId() {
 
 function renderTabs(activeId) {
   clear(tabsEl);
-  for (const m of MODULES) {
+  const visible = visibleIds(getData().settings).map((id) => BY_ID[id]).filter(Boolean);
+  for (const m of visible) {
     tabsEl.append(
       el('button', {
         class: 'tab' + (m.id === activeId ? ' on' : ''),
@@ -99,7 +91,7 @@ function renderHeader() {
 function refresh() { renderHeader(); renderView(); }
 
 window.addEventListener('hashchange', refresh);
-subscribe(() => { renderHeader(); });  // header updates live on any data change
+subscribe(() => { renderHeader(); renderTabs(currentId()); });  // header + tab bar update live
 document.getElementById('appTitle').textContent = getData().settings.appName || 'Compound';
 
 refresh();

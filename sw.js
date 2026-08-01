@@ -7,7 +7,7 @@
 // Bump VERSION on every deploy to invalidate old caches.
 // ============================================================
 
-const VERSION = 'compound-v17';
+const VERSION = 'compound-v18';
 const CORE = [
   './',
   './index.html',

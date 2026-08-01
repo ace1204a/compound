@@ -44,8 +44,11 @@ function defaultData() {
     },
     inbox: [],        // { id, url, note, area, status, verdict, score, myNotes, createdAt }
     finance: {
-      debts: [],      // { id, name, start, balance, priority }
-      months: [],     // { id, month:'YYYY-MM', income, spend, saved }
+      accounts: [],       // { id, name, balance }  — net worth
+      transactions: [],   // { id, date:'YYYY-MM-DD', desc, amount, kind:'in'|'out', account }
+      subscriptions: [],  // { id, name, amount, day }  — recurring monthly bills
+      debts: [],          // { id, name, start, balance, priority }
+      months: [],         // legacy manual monthly summaries (kept for old data)
     },
     books: [],        // { id, title, author, status, notes, highlights:[], sessions:[{date,pages}], addedAt }
     journal: {},      // 'YYYY-MM-DD' -> [ { id, time:'HH:MM', text } ]  — running diary through the day

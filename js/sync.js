@@ -161,6 +161,17 @@ export const MERGERS = {
     return [...out, ...byId.values()];
   },
   routineDone(local, remote) { return { ...remote, ...local }; },
+  finance(local, remote) {
+    const merge = (a, b) => { const m = new Map((b || []).map((x) => [x.id, x])); for (const x of (a || [])) m.set(x.id, { ...(m.get(x.id) || {}), ...x }); return [...m.values()]; };
+    return {
+      ...remote, ...local,
+      accounts: merge(local.accounts, remote.accounts),
+      transactions: merge(local.transactions, remote.transactions),
+      subscriptions: merge(local.subscriptions, remote.subscriptions),
+      debts: merge(local.debts, remote.debts),
+      months: (local.months && local.months.length) ? local.months : remote.months,
+    };
+  },
   checkins(local, remote) {
     const out = { ...remote };
     for (const [k, v] of Object.entries(local)) {

@@ -83,3 +83,17 @@ export function weekStartKey(k = todayKey()) {
 
 /** Confirm helper (kept simple with native confirm for now). */
 export function confirmAction(msg) { return window.confirm(msg); }
+
+// ---------- month helpers (for calendar views) ----------
+export function shiftMonth(ym, delta) { let [y, m] = ym.split('-').map(Number); m += delta; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return `${y}-${String(m).padStart(2, '0')}`; }
+export function monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
+/** Array of date keys for a month, Monday-first, with leading nulls for padding. */
+export function monthMatrix(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const pad = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const days = new Date(y, m, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < pad; i++) cells.push(null);
+  for (let d = 1; d <= days; d++) cells.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  return cells;
+}

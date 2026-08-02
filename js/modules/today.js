@@ -15,6 +15,9 @@ import { tasksForDay, toggleTaskItem, nowAndNextTask } from './tasks.js';
 let selectedKey = todayKey();
 let arrangeMode = false;
 
+/** Jump to a specific day on the Today screen (used by the Habits calendar). */
+export function openDay(key) { selectedKey = key; location.hash = '/today'; }
+
 const LINES = [
   'Small reps, compounded.',
   'A bad day is data, not a write-off.',

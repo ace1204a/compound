@@ -5,7 +5,8 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, weekStartKey, confirmAction } from '../ui.js';
+import { el, toast, todayKey, addDays, weekStartKey, confirmAction, monthMatrix, shiftMonth, monthLabel } from '../ui.js';
+import { openDay } from './today.js';
 
 export const TIME_GROUPS = [['morning', '🌅 Morning'], ['day', '☀️ Daytime'], ['evening', '🌙 Evening'], ['', '📌 Anytime']];
 
@@ -199,13 +200,46 @@ function addForm(rerender) {
     el('div', { class: 'hint' }, 'Tip: ✎ to set a time of day, mark ★ non-negotiable, or make it a counter (water 3L).'));
 }
 
+let showMonth = false;
+let calMonth = todayKey().slice(0, 7);
+
+function monthCard(rerender) {
+  const d = getData();
+  const dailyHabits = d.habits.filter((h) => h.cadence === 'daily' || !h.cadence || (h.cadence && !h.cadence.perWeek));
+  const total = dailyHabits.length || d.habits.length;
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'rowflex', style: 'margin-bottom:6px' },
+    el('button', { class: 'btn btn--icon', onClick: () => { calMonth = shiftMonth(calMonth, -1); rerender(); } }, '‹'),
+    el('div', { style: 'flex:1;text-align:center;font-weight:700' }, monthLabel(calMonth)),
+    el('button', { class: 'btn btn--icon', onClick: () => { calMonth = shiftMonth(calMonth, 1); rerender(); } }, '›')));
+
+  const grid = el('div', { class: 'cal' });
+  ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((n) => grid.append(el('div', { class: 'cal__dow' }, n)));
+  for (const key of monthMatrix(calMonth)) {
+    if (!key) { grid.append(el('div', {})); continue; }
+    const doneCount = d.habits.filter((h) => dayComplete(h, key)).length;
+    const ratio = total ? doneCount / total : 0;
+    const lvl = doneCount === 0 ? '' : ratio >= 1 ? ' cal__cell--l3' : ratio >= 0.5 ? ' cal__cell--l2' : ' cal__cell--l1';
+    const cls = 'cal__cell' + lvl + (key === todayKey() ? ' cal__cell--today' : '');
+    grid.append(el('button', { class: cls, title: `${key}: ${doneCount} habits`, onClick: () => openDay(key) }, String(+key.slice(-2))));
+  }
+  card.append(grid);
+  card.append(el('div', { class: 'hint' }, 'Greener = more habits done. Tap a day to open and edit it.'));
+  return card;
+}
+
 function render(view) {
   const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   const d = getData();
 
-  view.append(el('div', { class: 'section-title' }, 'Habits'));
+  view.append(el('div', { class: 'rowflex' },
+    el('div', { class: 'section-title', style: 'flex:1' }, 'Habits'),
+    el('button', { class: 'btn btn--sm' + (showMonth ? ' btn--primary' : ' btn--ghost'), onClick: () => { showMonth = !showMonth; rerender(); } }, showMonth ? '☰ List' : '📅 Month')));
+
+  if (showMonth && d.habits.length) { view.append(monthCard(rerender)); window.scrollTo(0, y); return; }
+
   view.append(addForm(rerender));
 
   if (!d.habits.length) {

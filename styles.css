@@ -321,6 +321,9 @@ input::placeholder, textarea::placeholder { color: var(--muted-2); }
   font-variant-numeric: tabular-nums;
 }
 .cal__cell--good { background: var(--green-dim); border-color: var(--green); color: var(--green); font-weight: 700; }
+.cal__cell--l1 { background: #17281d; border-color: #244f37; color: #7fd6a3; }
+.cal__cell--l2 { background: #1a3a28; border-color: #2e7d4f; color: #a7e8c4; }
+.cal__cell--l3 { background: var(--green-dim); border-color: var(--green); color: var(--green); font-weight: 800; }
 .cal__cell--bad { background: var(--red-dim); border-color: var(--red); color: var(--red); font-weight: 700; }
 .cal__cell--logged { border-color: var(--gold-dim); color: var(--gold); }
 .cal__cell--today { box-shadow: 0 0 0 2px var(--gold); }

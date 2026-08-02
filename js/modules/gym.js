@@ -7,7 +7,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, confirmAction } from '../ui.js';
+import { el, toast, todayKey, confirmAction, monthMatrix, shiftMonth, monthLabel } from '../ui.js';
 
 // ---------- exercise library (grouped → reliable body parts) ----------
 const LIBRARY_GROUPS = {
@@ -325,8 +325,34 @@ function templatesCard(rerender) {
 
 // ---------- history ----------
 let openSession = null;
+let gymCal = false;
+let gymCalMonth = todayKey().slice(0, 7);
+
+function historyCalendar(rerender) {
+  const d = getData();
+  const byDate = {};
+  for (const s of d.gym.sessions) (byDate[s.date] = byDate[s.date] || []).push(s);
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'rowflex', style: 'margin-bottom:6px' },
+    el('button', { class: 'btn btn--icon', onClick: () => { gymCalMonth = shiftMonth(gymCalMonth, -1); rerender(); } }, '‹'),
+    el('div', { style: 'flex:1;text-align:center;font-weight:700' }, monthLabel(gymCalMonth)),
+    el('button', { class: 'btn btn--icon', onClick: () => { gymCalMonth = shiftMonth(gymCalMonth, 1); rerender(); } }, '›')));
+  const grid = el('div', { class: 'cal' });
+  ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((n) => grid.append(el('div', { class: 'cal__dow' }, n)));
+  for (const key of monthMatrix(gymCalMonth)) {
+    if (!key) { grid.append(el('div', {})); continue; }
+    const has = byDate[key];
+    const cls = 'cal__cell' + (has ? ' cal__cell--l3' : '') + (key === todayKey() ? ' cal__cell--today' : '');
+    grid.append(el('button', { class: cls, title: has ? has.map((s) => s.name).join(', ') : key, onClick: () => { if (has) { openSession = has[0].id; gymCal = false; rerender(); } } }, String(+key.slice(-2))));
+  }
+  card.append(grid);
+  card.append(el('div', { class: 'hint' }, 'Green = trained. Tap a day to open that workout.'));
+  return card;
+}
+
 function historyCard(rerender) {
   const d = getData();
+  if (gymCal) return historyCalendar(rerender);
   const card = el('div', { class: 'card' });
   if (!d.gym.sessions.length) { card.append(el('div', { class: 'empty muted' }, 'No workouts yet. Start one above.')); return card; }
   d.gym.sessions.slice(0, 40).forEach((s) => {
@@ -389,7 +415,9 @@ function render(view) {
   view.append(el('div', { class: 'section-title' }, 'Cardio'));
   view.append(cardioCard(rerender));
 
-  view.append(el('div', { class: 'section-title' }, `History · ${d.gym.sessions.length}`));
+  view.append(el('div', { class: 'rowflex' },
+    el('div', { class: 'section-title', style: 'flex:1' }, `History · ${d.gym.sessions.length}`),
+    el('button', { class: 'btn btn--sm' + (gymCal ? ' btn--primary' : ' btn--ghost'), onClick: () => { gymCal = !gymCal; rerender(); } }, gymCal ? '☰ List' : '📅 Month')));
   view.append(historyCard(rerender));
 
   // PRs — grouped by body part, in a dropdown below history

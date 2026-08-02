@@ -1,40 +1,47 @@
 // ============================================================
-// Gym — Strong-style. Templates, an inline-editable live workout
-// with a rest timer, per-set done ticks, tap-previous-to-fill,
-// an exercise library, reordering, viewing + editing past
-// workouts, and PRs grouped by body part.
+// Gym — Strong-style, refined. Library-backed body-part grouping,
+// a searchable picker with per-body-part dropdowns + Recent,
+// warm-up sets, per-exercise sticky notes (with last-time history),
+// drag-to-reorder (with arrow fallback), editable templates that
+// use the same picker.
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, confirmAction } from '../ui.js';
 
-// ---------- body-part inference (order matters) ----------
+// ---------- exercise library (grouped → reliable body parts) ----------
+const LIBRARY_GROUPS = {
+  Chest: ['Bench Press', 'Incline Bench Press', 'Incline DB Press', 'DB Bench Press', 'Machine Chest Press', 'Chest Fly', 'Cable Fly', 'Dips', 'Push-ups'],
+  Back: ['Pull Ups', 'Chin Ups', 'Lat Pulldown', 'Barbell Row', 'Dumbbell Row', 'Seated Cable Row', 'T-Bar Row', 'Face Pull', 'Deadlift'],
+  Shoulders: ['Overhead Press', 'DB Shoulder Press', 'Arnold Press', 'Lateral Raise', 'Cable Lateral Raise', 'Rear Delt Fly', 'Upright Row'],
+  Biceps: ['Barbell Curl', 'Dumbbell Curl', 'Hammer Curl', 'Preacher Curl', 'Cable Curl', 'Incline Curl'],
+  Triceps: ['Tricep Pushdown', 'Cable Tricep Extension', 'Overhead Tricep Extension', 'Skull Crushers', 'Close-Grip Bench'],
+  Legs: ['Squat', 'Front Squat', 'Leg Press', 'Romanian Deadlift', 'Bulgarian Split Squat', 'Lunges', 'Leg Extension', 'Leg Curl', 'Calf Raise', 'Hip Thrust'],
+  Core: ['Hanging Leg Raise', 'Hanging Knee Raise', 'Cable Crunch', 'Ab Wheel', 'Plank', 'Sit-ups'],
+};
+const LIB_BP = {};
+for (const [bp, names] of Object.entries(LIBRARY_GROUPS)) for (const n of names) LIB_BP[n.toLowerCase()] = bp;
+
 const BP_RULES = [
-  [/squat|leg press|leg curl|leg extension|lunge|calf|hip thrust|romanian|rdl|glute|hamstring|quad/, 'Legs'],
-  [/\bab\b|crunch|plank|leg raise|knee raise|\bcore\b|ab wheel|hanging/, 'Core'],
-  [/shoulder|overhead press|\bohp\b|lateral|lat raise|delt|arnold|upright/, 'Shoulders'],
+  [/squat|leg press|leg curl|leg extension|lunge|calf|hip thrust|romanian|rdl|glute|hamstring|quad|split squat/, 'Legs'],
+  [/\bab\b|crunch|plank|leg raise|knee raise|\bcore\b|ab wheel|sit.?up|hanging/, 'Core'],
+  [/shoulder|overhead press|\bohp\b|lateral|delt|arnold|upright/, 'Shoulders'],
   [/bench|chest|incline|\bfly\b|dip|push.?up|\bpec|db press|dumbbell press/, 'Chest'],
   [/tricep|pushdown|skull|close.?grip|extension/, 'Triceps'],
   [/bicep|curl/, 'Biceps'],
   [/pull.?up|lat pulldown|\blats?\b|\brow\b|deadlift|\bback\b|chin|face pull/, 'Back'],
   [/run|jog|cardio|sprint|erg|bike/, 'Cardio'],
 ];
-function bodyPart(name) { const n = (name || '').toLowerCase(); for (const [re, bp] of BP_RULES) if (re.test(n)) return bp; return 'Other'; }
+function bodyPart(name) {
+  const n = (name || '').trim().toLowerCase();
+  if (LIB_BP[n]) return LIB_BP[n];              // library = authoritative
+  for (const [re, bp] of BP_RULES) if (re.test(n)) return bp;
+  return 'Other';
+}
 const BP_ORDER = ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core', 'Cardio', 'Other'];
-
-const LIBRARY = [
-  'Bench Press', 'Incline Bench Press', 'Incline DB Press', 'DB Bench Press', 'Chest Fly', 'Cable Fly', 'Dips', 'Push-ups',
-  'Pull Ups', 'Lat Pulldown', 'Barbell Row', 'Dumbbell Row', 'Seated Cable Row', 'Face Pull', 'Deadlift', 'T-Bar Row',
-  'Overhead Press', 'DB Shoulder Press', 'Lateral Raise', 'Rear Delt Fly', 'Arnold Press', 'Upright Row',
-  'Barbell Curl', 'Dumbbell Curl', 'Hammer Curl', 'Preacher Curl', 'Cable Curl',
-  'Tricep Pushdown', 'Overhead Tricep Extension', 'Skull Crushers', 'Close-Grip Bench', 'Cable Tricep Extension',
-  'Squat', 'Front Squat', 'Leg Press', 'Romanian Deadlift', 'Leg Extension', 'Leg Curl', 'Lunges', 'Calf Raise', 'Hip Thrust',
-  'Hanging Leg Raise', 'Cable Crunch', 'Plank', 'Ab Wheel',
-];
 
 function moveItem(arr, i, dir) { const j = i + dir; if (j < 0 || j >= arr.length) return; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
 
-// last time this exercise was trained → its sets (for "previous" + prefill)
 function lastTimeFor(d, exercise) {
   for (const s of d.gym.sessions) {
     const e = (s.entries || []).find((x) => x.exercise.toLowerCase() === (exercise || '').toLowerCase());
@@ -42,11 +49,27 @@ function lastTimeFor(d, exercise) {
   }
   return null;
 }
+function lastNoteFor(d, exercise) {
+  for (const s of d.gym.sessions) {
+    const e = (s.entries || []).find((x) => x.exercise.toLowerCase() === (exercise || '').toLowerCase() && x.note);
+    if (e) return { note: e.note, date: s.date };
+  }
+  return null;
+}
+function recentExercises(d, limit = 8) {
+  const seen = [];
+  for (const s of d.gym.sessions) for (const e of (s.entries || [])) {
+    if (!seen.some((x) => x.toLowerCase() === e.exercise.toLowerCase())) seen.push(e.exercise);
+    if (seen.length >= limit) return seen;
+  }
+  return seen;
+}
 
-// ---------- PRs grouped by body part ----------
+// ---------- PRs (skip warm-up sets) ----------
 function computePRs(sessions) {
   const prs = {};
   for (const s of sessions) for (const e of s.entries || []) for (const set of e.sets || []) {
+    if (set.warmup) continue;
     const kg = +set.kg || 0; if (!kg) continue;
     const cur = prs[e.exercise];
     if (!cur || kg > cur.kg || (kg === cur.kg && (+set.reps || 0) > cur.reps)) prs[e.exercise] = { kg, reps: +set.reps || 0, date: s.date };
@@ -54,7 +77,7 @@ function computePRs(sessions) {
   return prs;
 }
 
-// ---------- rest timer (survives re-renders) ----------
+// ---------- rest timer ----------
 let rest = { endTime: 0, duration: 90 };
 let restLoop = null;
 function ensureRestLoop() {
@@ -82,43 +105,103 @@ function restWidget() {
       el('button', { class: 'btn btn--sm btn--ghost', onClick: () => { rest.endTime = 0; } }, 'Skip')));
 }
 
-// ---------- exercise picker (library + your history) ----------
+// ---------- exercise picker (Recent + collapsible body-part groups + search) ----------
 let pickerOpen = false;
-function addExerciseToDraft(name) {
-  const d = getData();
+let pickerTarget = 'draft'; // 'draft' or a template id
+let pickerOpenGroups = {};
+
+function makeEntry(d, name) {
   const prev = lastTimeFor(d, name);
-  const sets = prev ? prev.map((s) => ({ kg: s.kg, reps: s.reps, done: false })) : [{ kg: 0, reps: 0, done: false }];
-  update((x) => { x.gym.draft.entries.push({ exercise: name, sets }); });
+  const note = lastNoteFor(d, name);
+  return { id: uid(), exercise: name, note: note ? note.note : '', sets: prev ? prev.map((s) => ({ kg: s.kg, reps: s.reps, done: false, warmup: !!s.warmup })) : [{ kg: 0, reps: 0, done: false }] };
+}
+function pickerAdd(name, rerender) {
+  const d = getData();
+  if (pickerTarget === 'draft') {
+    update((x) => { x.gym.draft.entries.push(makeEntry(x, name)); });
+  } else {
+    update((x) => { const t = x.gym.templates.find((a) => a.id === pickerTarget); if (t && !t.exercises.includes(name)) t.exercises.push(name); });
+  }
+  toast(name + ' added');
 }
 function pickerPanel(rerender) {
   const d = getData();
-  const histNames = [...new Set(d.gym.sessions.flatMap((s) => (s.entries || []).map((e) => e.exercise)))];
-  const all = [...new Set([...histNames, ...LIBRARY])];
+  const recent = recentExercises(d);
+  const custom = [...new Set(d.gym.sessions.flatMap((s) => (s.entries || []).map((e) => e.exercise)))]
+    .filter((n) => !LIB_BP[n.toLowerCase()]);
+
   const groups = {};
-  all.forEach((n) => { const bp = bodyPart(n); (groups[bp] = groups[bp] || []).push(n); });
+  for (const [bp, names] of Object.entries(LIBRARY_GROUPS)) groups[bp] = [...names];
+  for (const n of custom) { const bp = bodyPart(n); (groups[bp] = groups[bp] || []).push(n); }
 
   const search = el('input', { type: 'text', placeholder: 'Search exercises…', id: 'exSearch' });
   const list = el('div', {});
+  function libBtn(n) {
+    return el('button', { class: 'libitem', onClick: () => { pickerAdd(n, rerender); pickerOpen = false; rerender(); } },
+      n, el('span', { class: 'chip chip--tag', style: 'float:right' }, bodyPart(n)));
+  }
   function paint(q = '') {
     list.replaceChildren();
-    BP_ORDER.filter((bp) => groups[bp]).forEach((bp) => {
-      const matches = groups[bp].filter((n) => n.toLowerCase().includes(q.toLowerCase())).sort();
-      if (!matches.length) return;
-      list.append(el('div', { class: 'section-title', style: 'margin:12px 2px 6px' }, bp));
-      matches.forEach((n) => list.append(el('button', { class: 'libitem', onClick: () => { addExerciseToDraft(n); toast(n + ' added'); pickerOpen = false; rerender(); } },
-        n, histNames.includes(n) ? el('span', { class: 'chip', style: 'float:right' }, 'history') : null)));
+    if (q) {
+      const all = [...new Set([...Object.values(LIBRARY_GROUPS).flat(), ...custom])];
+      const matches = all.filter((n) => n.toLowerCase().includes(q.toLowerCase())).sort();
+      if (!matches.length) { list.append(el('div', { class: 'empty muted' }, 'No match. Add it as a new exercise below.')); return; }
+      matches.forEach((n) => list.append(libBtn(n)));
+      return;
+    }
+    if (recent.length) {
+      list.append(el('div', { class: 'section-title', style: 'margin:8px 2px 6px' }, '🕑 Recent'));
+      recent.forEach((n) => list.append(libBtn(n)));
+    }
+    BP_ORDER.filter((bp) => groups[bp] && groups[bp].length).forEach((bp) => {
+      const open = !!pickerOpenGroups[bp];
+      const body = el('div', { class: 'collapse__body' + (open ? ' open' : '') });
+      [...new Set(groups[bp])].sort().forEach((n) => body.append(libBtn(n)));
+      const head = el('button', { class: 'collapse__head', onClick: () => { pickerOpenGroups[bp] = !pickerOpenGroups[bp]; paint(search.value); } },
+        el('span', {}, `${bp} · ${groups[bp].length}`), el('span', { class: 'collapse__arrow' }, open ? '▾' : '▸'));
+      list.append(el('div', { class: 'card card--tight', style: 'margin-bottom:6px' }, head, body));
     });
   }
   search.addEventListener('input', () => paint(search.value));
   paint();
 
+  const newName = el('input', { type: 'text', placeholder: 'or type a new one…', maxlength: '60' });
   return el('div', { class: 'card' },
     el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, 'Add exercise'), el('button', { class: 'btn btn--sm', onClick: () => { pickerOpen = false; rerender(); } }, 'Close')),
     search,
-    el('div', { class: 'inline-form', style: 'margin-top:8px' },
-      el('input', { type: 'text', placeholder: 'or type a new one…', id: 'exNew', maxlength: '60' }),
-      el('button', { class: 'btn btn--primary', onClick: () => { const v = document.getElementById('exNew').value.trim(); if (!v) return; addExerciseToDraft(v); toast(v + ' added'); pickerOpen = false; rerender(); } }, 'Add')),
+    el('div', { class: 'inline-form', style: 'margin-top:8px' }, newName,
+      el('button', { class: 'btn btn--primary', onClick: () => { const v = newName.value.trim(); if (!v) return; pickerAdd(v, rerender); pickerOpen = false; rerender(); } }, 'Add')),
     list);
+}
+
+// ---------- drag reorder ----------
+function attachDrag(handle, block, container, commit) {
+  handle.style.touchAction = 'none';
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    block.classList.add('dragging');
+    const move = (ev) => {
+      const y = ev.clientY;
+      const sibs = [...container.querySelectorAll('.exblock')].filter((b) => b !== block);
+      for (const b of sibs) {
+        const r = b.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        const blockAfterB = block.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING;
+        if (y < mid && !blockAfterB) { container.insertBefore(block, b); break; }
+        if (y > mid && blockAfterB) { container.insertBefore(block, b.nextSibling); break; }
+      }
+    };
+    const up = () => {
+      handle.releasePointerCapture(e.pointerId);
+      block.classList.remove('dragging');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      commit([...container.querySelectorAll('.exblock')].map((b) => b.dataset.id));
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
 }
 
 // ---------- live workout ----------
@@ -134,18 +217,31 @@ function draftCard(rerender) {
 
   card.append(restWidget());
 
-  draft.entries.forEach((entry, ei) => {
-    const prev = lastTimeFor(d, entry.exercise);
-    const block = el('div', { style: 'border-top:1px solid var(--line);padding:12px 0' });
+  const exContainer = el('div', {});
+  card.append(exContainer);
 
+  draft.entries.forEach((entry, ei) => {
+    if (!entry.id) entry.id = uid();
+    const prev = lastTimeFor(d, entry.exercise);
+    const prevNote = lastNoteFor(d, entry.exercise);
+    const block = el('div', { class: 'exblock', 'data-id': entry.id, style: 'border-top:1px solid var(--line);padding:12px 0' });
+
+    const handle = el('button', { class: 'btn btn--icon drag-handle', title: 'Drag to reorder' }, '⠿');
     const name = el('input', { class: 'exname', type: 'text', value: entry.exercise, maxlength: '60' });
     name.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].exercise = name.value.trim() || entry.exercise; }));
     block.append(el('div', { class: 'rowflex' },
+      handle,
       el('span', { class: 'chip chip--tag' }, bodyPart(entry.exercise)),
       name,
       el('button', { class: 'btn btn--icon', title: 'Move up', onClick: () => { update((x) => moveItem(x.gym.draft.entries, ei, -1)); rerender(); } }, '↑'),
       el('button', { class: 'btn btn--icon', title: 'Move down', onClick: () => { update((x) => moveItem(x.gym.draft.entries, ei, 1)); rerender(); } }, '↓'),
       el('button', { class: 'btn btn--icon', title: 'Remove exercise', onClick: () => { update((x) => { x.gym.draft.entries.splice(ei, 1); }); rerender(); } }, '×')));
+
+    // sticky note (above sets) + last-time history
+    const note = el('input', { class: 'exnote', type: 'text', placeholder: '📌 note for this exercise…', value: entry.note || '', maxlength: '120' });
+    note.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].note = note.value.trim(); }));
+    block.append(note);
+    if (prevNote && prevNote.note && prevNote.note !== entry.note) block.append(el('div', { class: 'hint', style: 'margin:2px 2px 6px' }, `last time (${prevNote.date}): ${prevNote.note}`));
 
     block.append(el('div', { class: 'setrow setrow--head' },
       el('span', { class: 'setrow__n' }, '#'), el('span', {}, 'kg'), el('span', {}, 'reps'), el('span', {}, 'prev'), el('span', {}, '✓')));
@@ -155,31 +251,24 @@ function draftCard(rerender) {
       const reps = el('input', { type: 'number', value: s.reps || '', min: '0', inputmode: 'numeric', placeholder: prev && prev[si] ? String(prev[si].reps) : '—' });
       kg.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].sets[si].kg = +kg.value || 0; }));
       reps.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].sets[si].reps = +reps.value || 0; }));
-      const prevBtn = el('button', { class: 'setrow__prev', title: 'Tap to fill from last time', onClick: () => {
-        if (!prev || !prev[si]) return;
-        update((x) => { x.gym.draft.entries[ei].sets[si].kg = prev[si].kg; x.gym.draft.entries[ei].sets[si].reps = prev[si].reps; });
-        rerender();
-      } }, prev && prev[si] ? `${prev[si].kg}×${prev[si].reps}` : '—');
-      block.append(el('div', { class: 'setrow' + (s.done ? ' setrow--done' : '') },
-        el('span', { class: 'setrow__n' }, si + 1), kg, reps, prevBtn,
-        el('button', { class: 'check check--sm' + (s.done ? ' on' : ''), 'aria-label': 'Set done', onClick: () => {
-          update((x) => { const set = x.gym.draft.entries[ei].sets[si]; set.done = !set.done; });
-          if (!s.done) startRest(); // starting rest as you complete a set
-          rerender();
-        } })));
+      const num = el('button', { class: 'setrow__n setrow__wtoggle' + (s.warmup ? ' warm' : ''), title: 'Tap: toggle warm-up set', onClick: () => { update((x) => { const set = x.gym.draft.entries[ei].sets[si]; set.warmup = !set.warmup; }); rerender(); } }, s.warmup ? 'W' : String(si + 1 - entry.sets.slice(0, si).filter((z) => z.warmup).length));
+      const prevBtn = el('button', { class: 'setrow__prev', title: 'Fill from last time', onClick: () => { if (!prev || !prev[si]) return; update((x) => { x.gym.draft.entries[ei].sets[si].kg = prev[si].kg; x.gym.draft.entries[ei].sets[si].reps = prev[si].reps; }); rerender(); } }, prev && prev[si] ? `${prev[si].kg}×${prev[si].reps}` : '—');
+      block.append(el('div', { class: 'setrow' + (s.done ? ' setrow--done' : '') + (s.warmup ? ' setrow--warm' : '') },
+        num, kg, reps, prevBtn,
+        el('button', { class: 'check check--sm' + (s.done ? ' on' : ''), 'aria-label': 'Set done', onClick: () => { update((x) => { const set = x.gym.draft.entries[ei].sets[si]; set.done = !set.done; }); if (!s.done && !s.warmup) startRest(); rerender(); } })));
     });
 
-    block.append(el('button', { class: 'btn btn--sm btn--full', style: 'margin-top:8px', onClick: () => {
-      const last = entry.sets[entry.sets.length - 1] || (prev && prev[entry.sets.length]) || { kg: 0, reps: 0 };
-      update((x) => { x.gym.draft.entries[ei].sets.push({ kg: last.kg || 0, reps: last.reps || 0, done: false }); });
-      rerender();
-    } }, '+ Add set'));
-    card.append(block);
+    block.append(el('div', { class: 'rowflex', style: 'margin-top:8px' },
+      el('button', { class: 'btn btn--sm', style: 'flex:1', onClick: () => { const last = entry.sets[entry.sets.length - 1] || (prev && prev[entry.sets.length]) || { kg: 0, reps: 0 }; update((x) => { x.gym.draft.entries[ei].sets.push({ kg: last.kg || 0, reps: last.reps || 0, done: false }); }); rerender(); } }, '+ Add set'),
+      el('button', { class: 'btn btn--sm btn--ghost', onClick: () => { update((x) => { x.gym.draft.entries[ei].sets.push({ kg: 0, reps: 0, done: false, warmup: true }); }); rerender(); } }, '+ Warm-up')));
+
+    attachDrag(handle, block, exContainer, (order) => update((x) => { x.gym.draft.entries.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)); }));
+    exContainer.append(block);
   });
 
-  card.append(el('button', { class: 'btn btn--full', style: 'margin-top:12px', onClick: () => { pickerOpen = true; rerender(); } }, '+ Add exercise'));
+  card.append(el('button', { class: 'btn btn--full', style: 'margin-top:12px', onClick: () => { pickerTarget = 'draft'; pickerOpen = true; rerender(); } }, '+ Add exercise'));
 
-  const notes = el('input', { type: 'text', placeholder: 'Notes (optional)', value: draft.notes || '' });
+  const notes = el('input', { type: 'text', placeholder: 'Workout notes (optional)', value: draft.notes || '' });
   notes.addEventListener('change', () => update((x) => { x.gym.draft.notes = notes.value; }));
   card.append(el('div', { style: 'margin-top:10px' }, notes));
 
@@ -192,19 +281,11 @@ function draftCard(rerender) {
   return card;
 }
 
-// ---------- templates (view + edit) ----------
+// ---------- templates (edit with the picker) ----------
 let editingTpl = null;
 function startFromTemplate(t) {
   const d = getData();
-  update((x) => {
-    x.gym.draft = {
-      id: uid(), date: todayKey(), name: t.name, notes: '',
-      entries: t.exercises.map((ex) => {
-        const prev = lastTimeFor(d, ex);
-        return { exercise: ex, sets: prev ? prev.map((s) => ({ kg: s.kg, reps: s.reps, done: false })) : [{ kg: 0, reps: 0, done: false }] };
-      }),
-    };
-  });
+  update((x) => { x.gym.draft = { id: uid(), date: todayKey(), name: t.name, notes: '', entries: t.exercises.map((ex) => makeEntry(x, ex)) }; });
 }
 function templatesCard(rerender) {
   const d = getData();
@@ -221,11 +302,11 @@ function templatesCard(rerender) {
         el('button', { class: 'btn btn--icon', onClick: () => { update((x) => moveItem(x.gym.templates.find((a) => a.id === t.id).exercises, i, -1)); rerender(); } }, '↑'),
         el('button', { class: 'btn btn--icon', onClick: () => { update((x) => moveItem(x.gym.templates.find((a) => a.id === t.id).exercises, i, 1)); rerender(); } }, '↓'),
         el('button', { class: 'btn btn--icon', onClick: () => { update((x) => { const tt = x.gym.templates.find((a) => a.id === t.id); tt.exercises.splice(i, 1); }); rerender(); } }, '×'))));
-      const addEx = el('input', { type: 'text', placeholder: 'add exercise', maxlength: '60' });
-      card.append(el('div', { class: 'card--tight', style: 'border:1px solid var(--gold-dim);border-radius:12px;padding:12px;margin-bottom:10px' },
+      card.append(el('div', { style: 'border:1px solid var(--gold-dim);border-radius:12px;padding:12px;margin-bottom:10px' },
         el('div', { class: 'inline-form' }, nm, el('button', { class: 'btn btn--sm', onClick: () => { editingTpl = null; rerender(); } }, 'Done')),
         body,
-        el('div', { class: 'inline-form', style: 'margin-top:8px' }, addEx, el('button', { class: 'btn', onClick: () => { const v = addEx.value.trim(); if (!v) return; update((x) => { x.gym.templates.find((a) => a.id === t.id).exercises.push(v); }); rerender(); } }, 'Add')),
+        el('button', { class: 'btn btn--full', style: 'margin-top:8px', onClick: () => { pickerTarget = t.id; pickerOpen = true; rerender(); } }, '+ Add exercise'),
+        pickerOpen && pickerTarget === t.id ? pickerPanel(rerender) : null,
         el('button', { class: 'btn btn--danger btn--full', style: 'margin-top:8px', onClick: () => { if (confirmAction(`Delete template "${t.name}"?`)) { update((x) => { x.gym.templates = x.gym.templates.filter((a) => a.id !== t.id); }); editingTpl = null; rerender(); } } }, 'Delete template')));
       return;
     }
@@ -236,43 +317,31 @@ function templatesCard(rerender) {
   });
 
   const name = el('input', { type: 'text', placeholder: 'New template name', maxlength: '40' });
-  const exs = el('input', { type: 'text', placeholder: 'exercises, comma-separated', maxlength: '300' });
-  card.append(el('div', { class: 'stack', style: 'margin-top:10px' }, name, exs,
-    el('button', { class: 'btn btn--full', onClick: () => {
-      const n = name.value.trim(); const list = exs.value.split(',').map((s) => s.trim()).filter(Boolean);
-      if (!n || !list.length) { toast('Name + at least one exercise'); return; }
-      update((x) => { x.gym.templates.push({ id: uid(), name: n, exercises: list }); });
-      name.value = ''; exs.value = ''; toast('Template saved'); rerender();
-    } }, '+ Add template'),
-    el('button', { class: 'btn btn--ghost btn--full', onClick: () => { update((x) => { x.gym.draft = { id: uid(), date: todayKey(), name: 'Workout', entries: [], notes: '' }; }); pickerOpen = true; rerender(); } }, 'Empty workout')));
+  card.append(el('div', { class: 'stack', style: 'margin-top:10px' }, name,
+    el('button', { class: 'btn btn--full', onClick: () => { const n = name.value.trim(); if (!n) { toast('Name it'); return; } update((x) => { x.gym.templates.push({ id: uid(), name: n, exercises: [] }); }); editingTpl = getData().gym.templates.slice(-1)[0].id; name.value = ''; rerender(); } }, '+ New template (then add exercises)'),
+    el('button', { class: 'btn btn--ghost btn--full', onClick: () => { update((x) => { x.gym.draft = { id: uid(), date: todayKey(), name: 'Workout', entries: [], notes: '' }; }); pickerTarget = 'draft'; pickerOpen = true; rerender(); } }, 'Empty workout')));
   return card;
 }
 
-// ---------- history (view + edit past) ----------
+// ---------- history ----------
 let openSession = null;
 function historyCard(rerender) {
   const d = getData();
   const card = el('div', { class: 'card' });
   if (!d.gym.sessions.length) { card.append(el('div', { class: 'empty muted' }, 'No workouts yet. Start one above.')); return card; }
-
   d.gym.sessions.slice(0, 40).forEach((s) => {
     const sets = (s.entries || []).reduce((n, e) => n + (e.sets || []).length, 0);
     const open = openSession === s.id;
     card.append(el('div', { class: 'row', onClick: (e) => { if (e.target.closest('button')) return; openSession = open ? null : s.id; rerender(); } },
-      el('div', { class: 'row__main' },
-        el('div', { class: 'row__name' }, `${s.name} — ${s.date}`),
-        el('div', { class: 'row__meta' }, `${(s.entries || []).length} exercises · ${sets} sets${s.notes ? ' · ' + s.notes : ''}`)),
-      el('button', { class: 'btn btn--icon', onClick: () => {
-        if (d.gym.draft) { toast('Finish your current workout first'); return; }
-        update((x) => { x.gym.draft = { ...s }; x.gym.sessions = x.gym.sessions.filter((a) => a.id !== s.id); });
-        openSession = null; rerender(); toast('Loaded for editing');
-      }, title: 'Edit' }, '✎'),
+      el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, `${s.name} — ${s.date}`), el('div', { class: 'row__meta' }, `${(s.entries || []).length} exercises · ${sets} sets`)),
+      el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { if (d.gym.draft) { toast('Finish your current workout first'); return; } update((x) => { x.gym.draft = { ...s }; x.gym.sessions = x.gym.sessions.filter((a) => a.id !== s.id); }); openSession = null; rerender(); toast('Loaded for editing'); } }, '✎'),
       el('button', { class: 'btn btn--icon', onClick: () => { if (confirmAction('Delete this workout?')) { update((x) => { x.gym.sessions = x.gym.sessions.filter((a) => a.id !== s.id); }); rerender(); } } }, '×')));
     if (open) {
       const detail = el('div', { style: 'padding:2px 0 10px 6px' });
       (s.entries || []).forEach((e) => {
         detail.append(el('div', { class: 'row__name', style: 'margin-top:6px' }, e.exercise));
-        (e.sets || []).forEach((set, i) => detail.append(el('div', { class: 'row__meta' }, `set ${i + 1}: ${set.kg}kg × ${set.reps}${set.done ? ' ✓' : ''}`)));
+        if (e.note) detail.append(el('div', { class: 'hint' }, '📌 ' + e.note));
+        (e.sets || []).forEach((set, i) => detail.append(el('div', { class: 'row__meta' }, `${set.warmup ? 'W' : 'set ' + (i + 1)}: ${set.kg}kg × ${set.reps}${set.done ? ' ✓' : ''}`)));
       });
       card.append(detail);
     }
@@ -280,53 +349,12 @@ function historyCard(rerender) {
   return card;
 }
 
-// ---------- render ----------
-function render(view) {
-  const rerender = () => render(view);
-  view.replaceChildren();
-  const d = getData();
-
-  view.append(el('div', { class: 'section-title' }, 'Gym'));
-  if (d.gym.draft) {
-    view.append(draftCard(rerender));
-    if (pickerOpen) view.append(pickerPanel(rerender));
-  } else {
-    view.append(templatesCard(rerender));
-    if (pickerOpen) pickerOpen = false;
-  }
-
-  view.append(el('div', { class: 'section-title' }, 'Cardio'));
-  view.append(cardioCard(rerender));
-
-  view.append(el('div', { class: 'section-title' }, `History · ${d.gym.sessions.length}`));
-  view.append(historyCard(rerender));
-
-  // PRs — grouped by body part, tucked into a dropdown below history
-  const prs = computePRs(d.gym.sessions);
-  const names = Object.keys(prs);
-  if (names.length) {
-    const body = el('div', { class: 'collapse__body' });
-    const groups = {};
-    names.forEach((n) => { const bp = bodyPart(n); (groups[bp] = groups[bp] || []).push(n); });
-    BP_ORDER.filter((bp) => groups[bp]).forEach((bp) => {
-      body.append(el('div', { class: 'section-title', style: 'margin:10px 2px 4px' }, bp));
-      groups[bp].sort((a, b) => prs[b].kg - prs[a].kg).forEach((n) => body.append(el('div', { class: 'row' },
-        el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, n), el('div', { class: 'row__meta' }, `${prs[n].kg}kg × ${prs[n].reps} · ${prs[n].date}`)),
-        el('span', { class: 'chip chip--streak' }, 'PR'))));
-    });
-    const head = el('button', { class: 'collapse__head', onClick: () => { const o = body.classList.toggle('open'); head.querySelector('.collapse__arrow').textContent = o ? '▾' : '▸'; } },
-      el('span', {}, `🏆 Personal records · ${names.length}`), el('span', { class: 'collapse__arrow' }, '▸'));
-    view.append(el('div', { class: 'card card--tight' }, head, body));
-  }
-}
-
-// ---------- cardio (unchanged behaviour) ----------
+// ---------- cardio ----------
 function cardioCard(rerender) {
   const d = getData();
   const list = [...(d.gym.cardio || [])].sort((a, b) => b.date.localeCompare(a.date));
   const runs = list.filter((c) => c.type === 'Run' && +c.distance >= 4.5 && +c.minutes > 0);
   const best = runs.length ? runs.reduce((b, r) => (r.minutes / r.distance < b.minutes / b.distance ? r : b)) : null;
-
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, '🏃 Cardio & engine'), best ? el('span', { class: 'chip chip--streak' }, `5k best ${best.minutes}min`) : null));
   const type = el('select', {}, ...['Run', 'Football', 'Walk', 'Bike', 'Sprints', 'Other'].map((t) => el('option', { value: t }, t)));
@@ -336,12 +364,55 @@ function cardioCard(rerender) {
     el('button', { class: 'btn', onClick: () => { if (!+minutes.value) { toast('How many minutes?'); return; } update((x) => { x.gym.cardio = x.gym.cardio || []; x.gym.cardio.unshift({ id: uid(), date: todayKey(), type: type.value, distance: +distance.value || 0, minutes: +minutes.value }); }); distance.value = ''; minutes.value = ''; toast('Logged 🏃'); rerender(); } }, 'Log')));
   list.slice(0, 6).forEach((c) => {
     const pace = (c.distance && c.minutes) ? ` · ${(c.minutes / c.distance).toFixed(1)} min/km` : '';
-    card.append(el('div', { class: 'row' },
-      el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, `${c.type}${c.distance ? ' · ' + c.distance + 'km' : ''} · ${c.minutes}min`), el('div', { class: 'row__meta' }, c.date + pace)),
+    card.append(el('div', { class: 'row' }, el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, `${c.type}${c.distance ? ' · ' + c.distance + 'km' : ''} · ${c.minutes}min`), el('div', { class: 'row__meta' }, c.date + pace)),
       el('button', { class: 'btn btn--icon', onClick: () => { update((x) => { x.gym.cardio = x.gym.cardio.filter((y) => y.id !== c.id); }); rerender(); } }, '×')));
   });
   if (!list.length) card.append(el('div', { class: 'empty muted' }, 'No cardio logged yet.'));
   return card;
+}
+
+// ---------- render ----------
+function render(view) {
+  const y = window.scrollY;
+  const rerender = () => render(view);
+  view.replaceChildren();
+  const d = getData();
+
+  view.append(el('div', { class: 'section-title' }, 'Gym'));
+  if (d.gym.draft) {
+    view.append(draftCard(rerender));
+    if (pickerOpen && pickerTarget === 'draft') view.append(pickerPanel(rerender));
+  } else {
+    view.append(templatesCard(rerender));
+  }
+
+  view.append(el('div', { class: 'section-title' }, 'Cardio'));
+  view.append(cardioCard(rerender));
+
+  view.append(el('div', { class: 'section-title' }, `History · ${d.gym.sessions.length}`));
+  view.append(historyCard(rerender));
+
+  // PRs — grouped by body part, in a dropdown below history
+  const prs = computePRs(d.gym.sessions);
+  const names = Object.keys(prs);
+  if (names.length) {
+    const body = el('div', { class: 'collapse__body' });
+    const groups = {};
+    names.forEach((n) => { const bp = bodyPart(n); (groups[bp] = groups[bp] || []).push(n); });
+    BP_ORDER.filter((bp) => groups[bp]).forEach((bp) => {
+      const gbody = el('div', { class: 'collapse__body' });
+      groups[bp].sort((a, b) => prs[b].kg - prs[a].kg).forEach((n) => gbody.append(el('div', { class: 'row' },
+        el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, n), el('div', { class: 'row__meta' }, `${prs[n].kg}kg × ${prs[n].reps} · ${prs[n].date}`)),
+        el('span', { class: 'chip chip--streak' }, 'PR'))));
+      const ghead = el('button', { class: 'collapse__head', onClick: () => { const o = gbody.classList.toggle('open'); ghead.querySelector('.collapse__arrow').textContent = o ? '▾' : '▸'; } },
+        el('span', {}, `${bp} · ${groups[bp].length}`), el('span', { class: 'collapse__arrow' }, '▸'));
+      body.append(el('div', { class: 'card card--tight', style: 'margin-bottom:6px' }, ghead, gbody));
+    });
+    const head = el('button', { class: 'collapse__head', onClick: () => { const o = body.classList.toggle('open'); head.querySelector('.collapse__arrow').textContent = o ? '▾' : '▸'; } },
+      el('span', {}, `🏆 Personal records · ${names.length}`), el('span', { class: 'collapse__arrow' }, '▸'));
+    view.append(el('div', { class: 'card card--tight' }, head, body));
+  }
+  window.scrollTo(0, y);
 }
 
 export default { render };

@@ -367,6 +367,20 @@ input::placeholder, textarea::placeholder { color: var(--muted-2); }
 .rest__fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--green)); transition: width .25s linear; }
 .rest__disp { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 52px; text-align: center; color: var(--gold); }
 
+/* gym: warm-up set toggle + row */
+.setrow__wtoggle { background: transparent; border: none; color: var(--muted); font-weight: 800; cursor: pointer; }
+.setrow__wtoggle.warm { color: var(--gold); }
+.setrow--warm input { opacity: .7; }
+
+/* gym: drag handle + dragging state */
+.drag-handle { cursor: grab; color: var(--muted-2); touch-action: none; font-size: 15px; }
+.drag-handle:active { cursor: grabbing; }
+.exblock.dragging { opacity: .6; background: var(--card-2); border-radius: 10px; }
+
+/* gym: per-exercise sticky note */
+.exnote { width: 100%; margin-top: 8px; background: #201b0e; border: 1px solid var(--gold-dim); border-radius: 9px; padding: 8px 10px; font-size: 13px; color: #f0dfb0; }
+.exnote::placeholder { color: #8a7a4e; }
+
 /* gym: exercise library items */
 .libitem { display: block; width: 100%; text-align: left; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text); margin-bottom: 6px; font-weight: 600; }
 .libitem:hover { border-color: var(--gold); }

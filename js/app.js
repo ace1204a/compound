@@ -52,18 +52,21 @@ function renderTabs(activeId) {
       )
     );
   }
-  // keep the active tab visible in the scroll strip
+  // Keep the active tab visible — scroll the strip HORIZONTALLY only.
+  // (scrollIntoView() also scrolls the page vertically, which yanked you to
+  // the top every time you ticked something.)
   const on = tabsEl.querySelector('.tab.on');
-  if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+  if (on) tabsEl.scrollLeft = on.offsetLeft - (tabsEl.clientWidth - on.offsetWidth) / 2;
 }
 
+let lastRenderedId = null;
 function renderView() {
   const id = currentId();
   const entry = MODULES.find((m) => m.id === id);
   renderTabs(id);
   clear(viewEl);
-  viewEl.scrollTop = 0;
-  window.scrollTo(0, 0);
+  // only jump to the top when you actually switch tabs, never on a re-render
+  if (id !== lastRenderedId) { viewEl.scrollTop = 0; window.scrollTo(0, 0); lastRenderedId = id; }
   try {
     entry.mod.render(viewEl);
   } catch (err) {

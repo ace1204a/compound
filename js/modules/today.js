@@ -7,7 +7,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, keyToDate, addDays, prettyDate } from '../ui.js';
+import { el, toast, todayKey, keyToDate, addDays, prettyDate , restoreScroll } from '../ui.js';
 import { computeStreaks, isDoneOn, weekCount, habitCount, habitTarget, TIME_GROUPS, checkControl } from './habits.js';
 import { tasksForDay, toggleTaskItem, nowAndNextTask } from './tasks.js';
 
@@ -62,7 +62,13 @@ function daySlider(rerender) {
     strip.append(chip);
   }
   // scroll the selected chip into view after render
-  setTimeout(() => { const on = document.querySelector('#dayslider .daychip.on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' }); }, 0);
+  // centre the selected day HORIZONTALLY only — scrollIntoView() would also
+  // scroll the page vertically and yank you to the top on every tick.
+  setTimeout(() => {
+    const strip = document.getElementById('dayslider');
+    const on = strip && strip.querySelector('.daychip.on');
+    if (on) strip.scrollLeft = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+  }, 0);
   return strip;
 }
 
@@ -274,11 +280,21 @@ function render(view) {
     tasks: () => {
       const dayTasks = tasksForDay(d, key);
       if (!dayTasks.length) return null;
+      const doneCount = dayTasks.filter((t) => t.done).length;
+      // compact: show what's next (up to 4 undone), not the whole day
+      const pending = dayTasks.filter((t) => !t.done).slice(0, 4);
+      const shown = pending.length ? pending : dayTasks.slice(-2);
       const c = el('div', { class: 'card' });
-      dayTasks.forEach((it) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
+      shown.forEach((it) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
         el('button', { class: 'check' + (it.done ? ' on' : ''), 'aria-label': 'Tick', onClick: () => { toggleTaskItem(it, key); rerender(); } }),
         el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, it.time ? el('span', { class: 'chip', style: 'margin-right:8px' }, it.time) : null, it.title)))));
-      return [el('div', { class: 'section-title' }, 'Tasks'), c];
+      if (dayTasks.length > shown.length) {
+        c.append(el('button', { class: 'btn btn--ghost btn--full', style: 'margin-top:8px', onClick: () => { location.hash = '/tasks'; } },
+          `See all ${dayTasks.length} →`));
+      }
+      return [el('div', { class: 'rowflex' },
+        el('div', { class: 'section-title', style: 'flex:1' }, 'Tasks'),
+        el('span', { class: 'chip' + (doneCount === dayTasks.length ? ' chip--key' : ''), style: 'margin-right:2px' }, `${doneCount}/${dayTasks.length}`)), c];
     },
     reflect: () => [el('div', { class: 'section-title' }, 'Reflect'), checkinCard(key, rerender)],
   };
@@ -302,7 +318,7 @@ function render(view) {
     const nodes = builders[id] && builders[id]();
     if (nodes) nodes.forEach((n) => view.append(n));
   });
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 function moveSection(order, i, dir) {

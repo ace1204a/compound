@@ -5,7 +5,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, keyToDate, prettyDate, confirmAction } from '../ui.js';
+import { el, toast, todayKey, addDays, keyToDate, prettyDate, confirmAction , restoreScroll } from '../ui.js';
 
 let selectedDay = todayKey();
 let editingId = null;
@@ -71,7 +71,7 @@ function render(view) {
     entries.forEach((e) => card.append(entryRow(e, rerender)));
     view.append(card);
   }
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 export default { render };

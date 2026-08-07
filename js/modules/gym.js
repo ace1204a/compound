@@ -7,7 +7,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, confirmAction, monthMatrix, shiftMonth, monthLabel } from '../ui.js';
+import { el, toast, todayKey, confirmAction, monthMatrix, shiftMonth, monthLabel , restoreScroll } from '../ui.js';
 
 // ---------- exercise library (grouped → reliable body parts) ----------
 const LIBRARY_GROUPS = {
@@ -174,34 +174,65 @@ function pickerPanel(rerender) {
     list);
 }
 
-// ---------- drag reorder ----------
+// ---------- drag reorder (pointer-based, works on touch) ----------
 function attachDrag(handle, block, container, commit) {
   handle.style.touchAction = 'none';
   handle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
     block.classList.add('dragging');
+
     const move = (ev) => {
+      ev.preventDefault();
       const y = ev.clientY;
-      const sibs = [...container.querySelectorAll('.exblock')].filter((b) => b !== block);
-      for (const b of sibs) {
+      const blocks = [...container.querySelectorAll('.exblock')];
+      for (const b of blocks) {
+        if (b === block) continue;
         const r = b.getBoundingClientRect();
         const mid = r.top + r.height / 2;
-        const blockAfterB = block.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING;
-        if (y < mid && !blockAfterB) { container.insertBefore(block, b); break; }
-        if (y > mid && blockAfterB) { container.insertBefore(block, b.nextSibling); break; }
+        // b comes after our block in the DOM?
+        const bIsAfter = !!(block.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (bIsAfter && y > mid) { container.insertBefore(block, b.nextSibling); break; }
+        if (!bIsAfter && y < mid) { container.insertBefore(block, b); break; }
       }
     };
-    const up = () => {
-      handle.releasePointerCapture(e.pointerId);
+    const up = (ev) => {
+      try { handle.releasePointerCapture(ev.pointerId); } catch (_) {}
       block.classList.remove('dragging');
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
       commit([...container.querySelectorAll('.exblock')].map((b) => b.dataset.id));
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
   });
+}
+
+/** Swipe a set row left to delete it. */
+function attachSwipeDelete(row, onDelete) {
+  let x0 = null, dx = 0;
+  row.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('input,button')) return;   // don't hijack the fields
+    x0 = e.clientX; dx = 0;
+  });
+  row.addEventListener('pointermove', (e) => {
+    if (x0 === null) return;
+    dx = e.clientX - x0;
+    if (dx < 0) { row.style.transform = `translateX(${Math.max(dx, -110)}px)`; row.style.opacity = String(1 + dx / 220); }
+  });
+  const end = () => {
+    if (x0 === null) return;
+    const shouldDelete = dx < -70;
+    row.style.transform = ''; row.style.opacity = '';
+    x0 = null;
+    if (shouldDelete) onDelete();
+  };
+  row.addEventListener('pointerup', end);
+  row.addEventListener('pointercancel', end);
+  row.addEventListener('pointerleave', end);
 }
 
 // ---------- live workout ----------
@@ -253,9 +284,11 @@ function draftCard(rerender) {
       reps.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].sets[si].reps = +reps.value || 0; }));
       const num = el('button', { class: 'setrow__n setrow__wtoggle' + (s.warmup ? ' warm' : ''), title: 'Tap: toggle warm-up set', onClick: () => { update((x) => { const set = x.gym.draft.entries[ei].sets[si]; set.warmup = !set.warmup; }); rerender(); } }, s.warmup ? 'W' : String(si + 1 - entry.sets.slice(0, si).filter((z) => z.warmup).length));
       const prevBtn = el('button', { class: 'setrow__prev', title: 'Fill from last time', onClick: () => { if (!prev || !prev[si]) return; update((x) => { x.gym.draft.entries[ei].sets[si].kg = prev[si].kg; x.gym.draft.entries[ei].sets[si].reps = prev[si].reps; }); rerender(); } }, prev && prev[si] ? `${prev[si].kg}×${prev[si].reps}` : '—');
-      block.append(el('div', { class: 'setrow' + (s.done ? ' setrow--done' : '') + (s.warmup ? ' setrow--warm' : '') },
+      const setRow = el('div', { class: 'setrow' + (s.done ? ' setrow--done' : '') + (s.warmup ? ' setrow--warm' : '') },
         num, kg, reps, prevBtn,
-        el('button', { class: 'check check--sm' + (s.done ? ' on' : ''), 'aria-label': 'Set done', onClick: () => { update((x) => { const set = x.gym.draft.entries[ei].sets[si]; set.done = !set.done; }); if (!s.done && !s.warmup) startRest(); rerender(); } })));
+        el('button', { class: 'check check--sm' + (s.done ? ' on' : ''), 'aria-label': 'Set done', onClick: () => { update((x) => { const set = x.gym.draft.entries[ei].sets[si]; set.done = !set.done; }); if (!s.done && !s.warmup) startRest(); rerender(); } }));
+      attachSwipeDelete(setRow, () => { update((x) => { x.gym.draft.entries[ei].sets.splice(si, 1); }); toast('Set removed'); rerender(); });
+      block.append(setRow);
     });
 
     block.append(el('div', { class: 'rowflex', style: 'margin-top:8px' },
@@ -327,6 +360,7 @@ function templatesCard(rerender) {
 let openSession = null;
 let gymCal = false;
 let gymCalMonth = todayKey().slice(0, 7);
+let calSelected = null;
 
 function historyCalendar(rerender) {
   const d = getData();
@@ -342,11 +376,35 @@ function historyCalendar(rerender) {
   for (const key of monthMatrix(gymCalMonth)) {
     if (!key) { grid.append(el('div', {})); continue; }
     const has = byDate[key];
-    const cls = 'cal__cell' + (has ? ' cal__cell--l3' : '') + (key === todayKey() ? ' cal__cell--today' : '');
-    grid.append(el('button', { class: cls, title: has ? has.map((s) => s.name).join(', ') : key, onClick: () => { if (has) { openSession = has[0].id; gymCal = false; rerender(); } } }, String(+key.slice(-2))));
+    const sel = calSelected === key;
+    const cls = 'cal__cell' + (has ? ' cal__cell--l3' : '') + (key === todayKey() ? ' cal__cell--today' : '') + (sel ? ' cal__cell--sel' : '');
+    grid.append(el('button', { class: cls, title: has ? has.map((s) => s.name).join(', ') : key, onClick: () => { calSelected = (calSelected === key ? null : key); rerender(); } }, String(+key.slice(-2))));
   }
   card.append(grid);
-  card.append(el('div', { class: 'hint' }, 'Green = trained. Tap a day to open that workout.'));
+
+  // show the selected day's workout right here, under the calendar
+  if (calSelected) {
+    const sessions = byDate[calSelected] || [];
+    const panel = el('div', { style: 'border-top:1px solid var(--line);margin-top:12px;padding-top:12px' });
+    panel.append(el('div', { class: 'card__title', style: 'margin-bottom:6px' }, calSelected));
+    if (!sessions.length) panel.append(el('div', { class: 'empty muted' }, 'No workout logged this day.'));
+    sessions.forEach((s) => {
+      panel.append(el('div', { class: 'row__name', style: 'margin-top:8px' }, s.name));
+      (s.entries || []).forEach((e) => {
+        panel.append(el('div', { class: 'row__name', style: 'margin-top:6px;font-size:14px' }, e.exercise));
+        if (e.note) panel.append(el('div', { class: 'hint' }, '📌 ' + e.note));
+        (e.sets || []).forEach((set, i) => panel.append(el('div', { class: 'row__meta' }, `${set.warmup ? 'W' : 'set ' + (i + 1)}: ${set.kg}kg × ${set.reps}${set.done ? ' ✓' : ''}`)));
+      });
+      panel.append(el('button', { class: 'btn btn--sm btn--full', style: 'margin-top:10px', onClick: () => {
+        if (getData().gym.draft) { toast('Finish your current workout first'); return; }
+        update((x) => { x.gym.draft = { ...s }; x.gym.sessions = x.gym.sessions.filter((a) => a.id !== s.id); });
+        gymCal = false; calSelected = null; rerender(); toast('Loaded for editing');
+      } }, '✎ Edit this workout'));
+    });
+    card.append(panel);
+  } else {
+    card.append(el('div', { class: 'hint' }, 'Green = trained. Tap a day to see that workout.'));
+  }
   return card;
 }
 
@@ -440,7 +498,7 @@ function render(view) {
       el('span', {}, `🏆 Personal records · ${names.length}`), el('span', { class: 'collapse__arrow' }, '▸'));
     view.append(el('div', { class: 'card card--tight' }, head, body));
   }
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 export default { render };

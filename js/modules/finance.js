@@ -7,7 +7,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, confirmAction } from '../ui.js';
+import { el, toast, todayKey, confirmAction , restoreScroll } from '../ui.js';
 
 const gbp = (n) => '£' + (+n || 0).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 function shiftMonth(ym, delta) { let [y, m] = ym.split('-').map(Number); m += delta; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return `${y}-${String(m).padStart(2, '0')}`; }
@@ -170,7 +170,7 @@ function render(view) {
   view.append(subsCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Debts'));
   view.append(debtsCard(rerender));
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 export default { render };

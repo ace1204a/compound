@@ -5,7 +5,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, weekStartKey, confirmAction, monthMatrix, shiftMonth, monthLabel } from '../ui.js';
+import { el, toast, todayKey, addDays, weekStartKey, confirmAction, monthMatrix, shiftMonth, monthLabel , restoreScroll } from '../ui.js';
 import { openDay } from './today.js';
 
 export const TIME_GROUPS = [['morning', '🌅 Morning'], ['day', '☀️ Daytime'], ['evening', '🌙 Evening'], ['', '📌 Anytime']];
@@ -101,16 +101,16 @@ export function habitLine(h, key, rerender, { compact = false } = {}) {
   const done = dayComplete(h, key);
   const tier = current >= 30 ? ' chip--t30' : current >= 7 ? ' chip--t7' : '';
 
+  // chips + the 7-day dots all live under the name so nothing can overlap
   const meta = el('div', { class: 'row__meta' },
     target > 1 ? el('span', { class: 'chip' + (done ? ' chip--key' : '') }, `${count}/${target}${h.unit ? h.unit : ''}`) : null,
     current > 0 ? el('span', { class: 'chip chip--streak' + tier }, `🔥 ${current}`) : null,
     (!compact && h.cadence && h.cadence.perWeek) ? el('span', { class: 'chip' }, cadenceLabel(h)) : null,
-    (!compact && h.keystone) ? el('span', { class: 'chip chip--key' }, '★') : null);
+    !compact ? dotStrip(h) : null);
 
   return el('div', { class: 'row' + (done ? ' done' : '') },
     checkControl(h, key, rerender),
-    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, h.name), meta),
-    !compact ? el('div', { style: 'margin-top:0' }, dotStrip(h)) : null);
+    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, h.name), meta));
 }
 
 // ---------- editor ----------
@@ -238,7 +238,7 @@ function render(view) {
     el('div', { class: 'section-title', style: 'flex:1' }, 'Habits'),
     el('button', { class: 'btn btn--sm' + (showMonth ? ' btn--primary' : ' btn--ghost'), onClick: () => { showMonth = !showMonth; rerender(); } }, showMonth ? '☰ List' : '📅 Month')));
 
-  if (showMonth && d.habits.length) { view.append(monthCard(rerender)); window.scrollTo(0, y); return; }
+  if (showMonth && d.habits.length) { view.append(monthCard(rerender)); restoreScroll(y); return; }
 
   view.append(addForm(rerender));
 
@@ -256,7 +256,7 @@ function render(view) {
     group.forEach((h, i) => c.append(fullRow(h, rerender, { i, n: group.length })));
     view.append(c);
   }
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 export default { render };

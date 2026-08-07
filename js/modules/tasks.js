@@ -7,7 +7,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, keyToDate, prettyDate, timeToMin, confirmAction } from '../ui.js';
+import { el, toast, todayKey, addDays, keyToDate, prettyDate, timeToMin, confirmAction , restoreScroll } from '../ui.js';
 
 let selectedDay = todayKey();
 let editingId = null;
@@ -131,6 +131,7 @@ function dayCard(rerender) {
       // reorder untimed one-offs
       (it.kind === 'task' && timeToMin(it.time) == null && uidx > 0) ? el('button', { class: 'btn btn--icon', title: 'Up', onClick: () => { reorderUntimed(key, uidx, -1); rerender(); } }, '↑') : null,
       (it.kind === 'task' && timeToMin(it.time) == null && uidx < untimed.length - 1) ? el('button', { class: 'btn btn--icon', title: 'Down', onClick: () => { reorderUntimed(key, uidx, 1); rerender(); } }, '↓') : null,
+      it.kind === 'task' ? el('button', { class: 'btn btn--icon', title: 'Move to backlog / longer-term', onClick: () => { update((x) => { const t = x.tasks.find((a) => a.id === it.id); if (t) { t.date = null; t.time = null; } }); toast('Moved to backlog'); rerender(); } }, '📥') : null,
       it.kind === 'task' ? el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingId = it.id; rerender(); } }, '✎') : null,
       it.kind === 'task'
         ? el('button', { class: 'btn btn--icon', title: 'Delete', onClick: () => { update((x) => { x.tasks = x.tasks.filter((a) => a.id !== it.id); }); rerender(); } }, '×')
@@ -255,7 +256,7 @@ function render(view) {
   view.append(addForm(rerender));
   view.append(routinesCard(rerender));
   view.append(backlogCard(rerender));
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 export default { render };

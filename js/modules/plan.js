@@ -6,7 +6,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, timeToMin, todayKey, addDays, confirmAction } from '../ui.js';
+import { el, toast, timeToMin, todayKey, addDays, confirmAction , restoreScroll } from '../ui.js';
 
 /** Which schedule block are we in right now? Returns { current, next }. */
 export function nowAndNext(day) {
@@ -142,7 +142,7 @@ function render(view) {
       el('span', { class: 'empty__emoji' }, '📋'),
       el('div', {}, 'No protocols loaded yet.'),
       el('div', { class: 'hint' }, 'Import a plan patch from Claude in Settings → Import.')));
-    window.scrollTo(0, y);
+    restoreScroll(y);
     return;
   }
 
@@ -160,7 +160,7 @@ function render(view) {
     plan.sections.forEach((s) => view.append(sectionCard(s)));
   }
   if (plan.updated) view.append(el('div', { class: 'hint', style: 'text-align:center' }, `plan version: ${plan.updated}`));
-  window.scrollTo(0, y);
+  restoreScroll(y);
 }
 
 export default { render };

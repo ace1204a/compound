@@ -84,6 +84,20 @@ export function weekStartKey(k = todayKey()) {
 /** Confirm helper (kept simple with native confirm for now). */
 export function confirmAction(msg) { return window.confirm(msg); }
 
+/** Restore the page scroll after a re-render.
+ *  Rebuilding the view empties the DOM, and the browser's scroll anchoring
+ *  then nudges the position AFTER a plain scrollTo() — so we re-apply on the
+ *  next frame too. Without this, every tick bounced you to the top. */
+export function restoreScroll(y) {
+  if (!y) return;
+  const put = () => { if (Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y); };
+  void document.documentElement.scrollHeight;   // force layout so height is real again
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => { put(); requestAnimationFrame(put); });
+  setTimeout(put, 0);
+  setTimeout(put, 60);
+}
+
 // ---------- month helpers (for calendar views) ----------
 export function shiftMonth(ym, delta) { let [y, m] = ym.split('-').map(Number); m += delta; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return `${y}-${String(m).padStart(2, '0')}`; }
 export function monthLabel(ym) { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }

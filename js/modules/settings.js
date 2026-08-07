@@ -43,6 +43,12 @@ function importData(file, rerender) {
               if (Array.isArray(d[k])) d[k].push(...val.__append.map((it) => ({ ...it, id: uid() })));
               continue;
             }
+            // { __merge: {...} } updates only the listed fields, leaving the rest
+            // of the module (e.g. your trading log/accounts) untouched
+            if (val && typeof val === 'object' && val.__merge && typeof d[k] === 'object' && !Array.isArray(d[k])) {
+              d[k] = { ...d[k], ...val.__merge };
+              continue;
+            }
             // a plan patch must NOT wipe your day-by-day tick history
             if (k === 'plan') { const keepDone = d.plan.done || {}; d.plan = { ...parsed.plan, done: keepDone }; }
             else d[k] = val;
@@ -268,7 +274,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.17 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.18 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

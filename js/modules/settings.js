@@ -49,6 +49,21 @@ function importData(file, rerender) {
               d[k] = { ...d[k], ...val.__merge };
               continue;
             }
+            // { __patchItems: [...], __remove: [ids] } edits list items BY ID and
+            // adds any that are new — so history (e.g. a habit's streak log) survives
+            if (val && typeof val === 'object' && (val.__patchItems || val.__remove) && Array.isArray(d[k])) {
+              for (const patch of (val.__patchItems || [])) {
+                const existing = d[k].find((x) => x.id === patch.id);
+                if (existing) Object.assign(existing, patch);
+                else d[k].push({ ...patch, id: patch.id || uid() });
+              }
+              if (Array.isArray(val.__remove)) d[k] = d[k].filter((x) => !val.__remove.includes(x.id));
+              if (Array.isArray(val.__order)) {
+                const pos = (x) => { const i = val.__order.indexOf(x.id); return i === -1 ? 999 : i; };
+                d[k].sort((a, b) => pos(a) - pos(b));
+              }
+              continue;
+            }
             // a plan patch must NOT wipe your day-by-day tick history
             if (k === 'plan') { const keepDone = d.plan.done || {}; d.plan = { ...parsed.plan, done: keepDone }; }
             else d[k] = val;

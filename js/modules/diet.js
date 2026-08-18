@@ -6,7 +6,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, confirmAction } from '../ui.js';
+import { el, toast, todayKey, addDays, confirmAction, restoreScroll } from '../ui.js';
 
 function isCleanDay(d, dateKey) {
   if (!d.diet.checklist.length) return false;
@@ -129,13 +129,96 @@ function weightCard(rerender) {
   return card;
 }
 
+// ---------- weekly cut review: 7-day averages, never single days ----------
+function avgOf(weights, fromKey, toKey) {
+  const inRange = weights.filter((w) => w.date >= fromKey && w.date <= toKey);
+  if (!inRange.length) return null;
+  return inRange.reduce((n, w) => n + (+w.kg || 0), 0) / inRange.length;
+}
+function cutReviewCard() {
+  const d = getData();
+  const weights = [...d.diet.weights].sort((a, b) => a.date.localeCompare(b.date));
+  const card = el('div', { class: 'card card--accent' });
+  card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, '⚖️ Weekly cut review'), el('span', { class: 'card__sub' }, '7-day averages only')));
+
+  const thisWeek = avgOf(weights, addDays(todayKey(), -6), todayKey());
+  const lastWeek = avgOf(weights, addDays(todayKey(), -13), addDays(todayKey(), -7));
+
+  if (thisWeek == null || lastWeek == null) {
+    card.append(el('div', { class: 'empty muted' }, 'Need ~2 weeks of morning weigh-ins to compare. Keep logging daily.'));
+    if (thisWeek != null) card.append(el('div', { class: 'row__meta' }, `this week's average: ${thisWeek.toFixed(2)} kg`));
+    return card;
+  }
+
+  const rate = lastWeek - thisWeek;           // + = losing
+  let verdict, cls;
+  if (rate >= 0.3 && rate <= 0.7) { verdict = 'On target — change nothing. This is exactly the rate you want.'; cls = 'chip--key'; }
+  else if (rate > 0.8) { verdict = 'Losing fast. If this repeats next week, add 100–150 kcal/day.'; cls = 'chip--streak'; }
+  else if (rate < 0.25) { verdict = 'Stalling. If this repeats next week, drop 100 kcal/day.'; cls = 'chip--streak'; }
+  else { verdict = 'Slightly under target rate — hold and reassess next week.'; cls = ''; }
+
+  card.append(el('div', { class: 'fgrid' },
+    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'This week avg'), el('div', { class: 'ftile__val' }, thisWeek.toFixed(2) + ' kg')),
+    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'Last week avg'), el('div', { class: 'ftile__val' }, lastWeek.toFixed(2) + ' kg')),
+    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'Rate'), el('div', { class: 'ftile__val ' + (rate > 0 ? 'pos' : 'neg') }, (rate > 0 ? '−' : '+') + Math.abs(rate).toFixed(2) + ' kg/wk')),
+    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'Target'), el('div', { class: 'ftile__val' }, '0.3–0.7'))));
+  card.append(el('div', { class: 'banner banner--gold', style: 'margin:12px 0 0' }, verdict));
+  card.append(el('div', { class: 'hint' }, 'Two consecutive weeks before changing anything. Body-fat % from the scale is secondary — trust weight trend, waist, photos, gym and running performance.'));
+  return card;
+}
+
+// ---------- meal prep: rolling portions ----------
+function mealPrepCard(rerender) {
+  const d = getData();
+  const meals = d.diet.meals || [];
+  const ready = meals.filter((m) => m.state !== 'eaten');
+  const fridge = ready.filter((m) => m.state === 'fridge').length;
+  const frozen = ready.filter((m) => m.state === 'frozen').length;
+  const needsPrep = ready.length <= 2;
+
+  const card = el('div', { class: 'card' + (needsPrep ? ' card--accent' : '') });
+  card.append(el('div', { class: 'card__head' },
+    el('div', { class: 'card__title' }, '🧊 Meal prep'),
+    el('span', { class: 'chip' + (needsPrep ? '' : ' chip--key') }, `${ready.length} ready`)));
+  if (needsPrep) card.append(el('div', { class: 'banner banner--warn', style: 'margin-bottom:10px' }, '🍳 MEAL PREP REQUIRED — cook 4–6 portions at the next evening or day off.'));
+  else card.append(el('div', { class: 'row__meta', style: 'margin-bottom:8px' }, el('span', { class: 'chip' }, `${fridge} fridge`), el('span', { class: 'chip' }, `${frozen} frozen`)));
+
+  const CYCLE = { fridge: 'frozen', frozen: 'eaten', eaten: 'fridge' };
+  ready.slice(0, 10).forEach((m) => card.append(el('div', { class: 'row' },
+    el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, m.name), el('div', { class: 'row__meta' }, 'cooked ' + m.cookedOn)),
+    el('button', { class: 'btn btn--sm', title: 'Change state', onClick: () => { update((x) => { const t = x.diet.meals.find((y) => y.id === m.id); t.state = CYCLE[t.state] || 'fridge'; }); rerender(); } },
+      m.state === 'fridge' ? '🧊 Fridge' : '❄️ Frozen'),
+    el('button', { class: 'btn btn--icon', title: 'Ate it', onClick: () => { update((x) => { x.diet.meals.find((y) => y.id === m.id).state = 'eaten'; }); toast('Enjoy'); rerender(); } }, '🍽'))));
+
+  const name = el('input', { type: 'text', placeholder: 'e.g. Chicken + rice + veg', maxlength: '40' });
+  const count = el('input', { type: 'number', value: '6', min: '1', max: '12', style: 'max-width:80px', inputmode: 'numeric' });
+  card.append(el('div', { class: 'rowflex', style: 'margin-top:10px' }, name, count,
+    el('button', { class: 'btn btn--primary', onClick: () => {
+      const n = name.value.trim() || 'Prepped meal';
+      const c = Math.max(1, Math.min(12, +count.value || 6));
+      update((x) => {
+        x.diet.meals = x.diet.meals || [];
+        for (let i = 0; i < c; i++) x.diet.meals.push({ id: uid(), name: n, state: i < 3 ? 'fridge' : 'frozen', cookedOn: todayKey() });
+      });
+      name.value = ''; toast(`${c} portions logged 🧊`); rerender();
+    } }, 'Cooked')));
+  card.append(el('div', { class: 'hint' }, 'First 3 go in the fridge, the rest frozen. Tap a portion to move fridge ⇄ frozen, or 🍽 when you eat it.'));
+  return card;
+}
+
 function render(view) {
+  const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   view.append(el('div', { class: 'section-title' }, 'Diet'));
   view.append(rulesCard(rerender));
+  view.append(el('div', { class: 'section-title' }, 'Cut review'));
+  view.append(cutReviewCard());
   view.append(el('div', { class: 'section-title' }, 'Bodyweight'));
   view.append(weightCard(rerender));
+  view.append(el('div', { class: 'section-title' }, 'Meal prep'));
+  view.append(mealPrepCard(rerender));
+  restoreScroll(y);
 }
 
 export default { render };

@@ -9,11 +9,30 @@
 import { getData, update, uid } from '../store.js';
 import { el, toast, todayKey, keyToDate, addDays, prettyDate , restoreScroll } from '../ui.js';
 import { computeStreaks, isDoneOn, weekCount, habitCount, habitTarget, TIME_GROUPS, checkControl } from './habits.js';
-import { tasksForDay, toggleTaskItem, nowAndNextTask } from './tasks.js';
+import { tasksForDay, toggleTaskItem, nowAndNextTask, dayStatus, setDayStatus } from './tasks.js';
 
 // which day we're looking at (persists while the app is open)
 let selectedKey = todayKey();
 let arrangeMode = false;
+let tasksExpanded = false;
+
+/** Working today or off? Decided each morning when the route list drops. */
+function statusCard(key, rerender) {
+  const status = dayStatus(getData(), key);
+  const pick = (v) => el('button', {
+    class: 'btn' + (status === v ? ' btn--primary' : ''), style: 'flex:1',
+    onClick: () => { setDayStatus(key, status === v ? null : v); rerender(); },
+  }, v === 'working' ? '🚚 Working' : '🏠 Day off');
+
+  const card = el('div', { class: 'card' + (status ? '' : ' card--accent') });
+  card.append(el('div', { class: 'card__head' },
+    el('div', { class: 'card__title' }, status ? (status === 'working' ? '🚚 Working today' : '🏠 Day off') : '❓ Working today?'),
+    el('span', { class: 'card__sub' }, status ? 'tap to change' : 'check the route list')));
+  if (!status) card.append(el('div', { class: 'card__sub', style: 'margin-bottom:8px' }, 'Assume working until you know. Set it and the day adjusts.'));
+  card.append(el('div', { class: 'rowflex' }, pick('working'), pick('off')));
+  if (status === 'off') card.append(el('div', { class: 'hint' }, 'Off-day: deep work block 2 (10:00–12:00), then meal prep if ≤2 portions left.'));
+  return card;
+}
 
 /** Jump to a specific day on the Today screen (used by the Habits calendar). */
 export function openDay(key) { selectedKey = key; location.hash = '/today'; }
@@ -281,27 +300,30 @@ function render(view) {
       const dayTasks = tasksForDay(d, key);
       if (!dayTasks.length) return null;
       const doneCount = dayTasks.filter((t) => t.done).length;
-      // compact: show what's next (up to 4 undone), not the whole day
-      const pending = dayTasks.filter((t) => !t.done).slice(0, 4);
-      const shown = pending.length ? pending : dayTasks.slice(-2);
+      // compact by default: just what's now and what's next. Tap to open the rest.
+      const pending = dayTasks.filter((t) => !t.done);
+      const shown = tasksExpanded ? dayTasks : (pending.slice(0, 2).length ? pending.slice(0, 2) : dayTasks.slice(-1));
       const c = el('div', { class: 'card' });
-      shown.forEach((it) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
+      shown.forEach((it, i) => c.append(el('div', { class: 'row' + (it.done ? ' done' : '') },
         el('button', { class: 'check' + (it.done ? ' on' : ''), 'aria-label': 'Tick', onClick: () => { toggleTaskItem(it, key); rerender(); } }),
-        el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, it.time ? el('span', { class: 'chip', style: 'margin-right:8px' }, it.time) : null, it.title)))));
-      if (dayTasks.length > shown.length) {
-        c.append(el('button', { class: 'btn btn--ghost btn--full', style: 'margin-top:8px', onClick: () => { location.hash = '/tasks'; } },
-          `See all ${dayTasks.length} →`));
+        el('div', { class: 'row__main' },
+          !tasksExpanded && !it.done ? el('div', { class: 'nowcard__label' }, i === 0 ? 'NOW' : 'NEXT') : null,
+          el('div', { class: 'row__name' }, it.time ? el('span', { class: 'chip', style: 'margin-right:8px' }, it.time) : null, it.title)))));
+      if (dayTasks.length > shown.length || tasksExpanded) {
+        c.append(el('button', { class: 'btn btn--ghost btn--full', style: 'margin-top:8px', onClick: () => { tasksExpanded = !tasksExpanded; rerender(); } },
+          tasksExpanded ? '▴ Show less' : `▾ Show the whole day (${dayTasks.length})`));
       }
       return [el('div', { class: 'rowflex' },
-        el('div', { class: 'section-title', style: 'flex:1' }, 'Tasks'),
+        el('div', { class: 'section-title', style: 'flex:1' }, 'Schedule'),
         el('span', { class: 'chip' + (doneCount === dayTasks.length ? ' chip--key' : ''), style: 'margin-right:2px' }, `${doneCount}/${dayTasks.length}`)), c];
     },
+    status: () => (key === todayKey() ? [statusCard(key, rerender)] : null),
     reflect: () => [el('div', { class: 'section-title' }, 'Reflect'), checkinCard(key, rerender)],
   };
-  const DEFAULT_ORDER = ['checklist', 'nonneg', 'habits', 'tasks', 'reflect'];
+  const DEFAULT_ORDER = ['status', 'tasks', 'checklist', 'nonneg', 'habits', 'reflect'];
   const stored = (d.settings.todayOrder || []).filter((id) => builders[id]);
   const order = [...stored, ...DEFAULT_ORDER.filter((id) => !stored.includes(id))];
-  const LABELS = { checklist: 'Checklist', nonneg: 'Non-negotiables', habits: 'Habits', tasks: 'Tasks', reflect: 'Reflect' };
+  const LABELS = { status: 'Work status', checklist: 'Checklist', nonneg: 'Non-negotiables', habits: 'Habits', tasks: 'Schedule', reflect: 'Reflect' };
 
   // arrange toggle
   view.append(el('div', { class: 'rowflex', style: 'justify-content:flex-end;margin:2px 0' },

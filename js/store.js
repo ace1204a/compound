@@ -24,6 +24,7 @@ function defaultData() {
     tasks: [],    // { id, title, date:'YYYY-MM-DD'|null, time:'HH:MM'|null, project, done, order, createdAt, completedAt }
     routines: [], // { id, title, time:'HH:MM'|null, freq:'daily'|{days:[0-6]}, project }  — repeatable tasks
     routineDone: {}, // 'routineId:YYYY-MM-DD' -> true
+    dayStatus: {},   // 'YYYY-MM-DD' -> 'working' | 'off'
     checkins: {}, // 'YYYY-MM-DD' -> { rating, win, lesson, updatedAt }
     goals: [],    // { id, area, title, why, status:'active'|'done', createdAt }
     gym: {
@@ -36,6 +37,7 @@ function defaultData() {
       checklist: [],  // { id, name }
       log: {},        // 'YYYY-MM-DD' -> { ruleId: true }
       weights: [],    // { date, kg, bf }
+      meals: [],      // { id, name, state:'fridge'|'frozen'|'eaten', cookedOn }
     },
     trading: {
       rules: [],      // { id, text }

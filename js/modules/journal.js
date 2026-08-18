@@ -5,10 +5,55 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, keyToDate, prettyDate, confirmAction , restoreScroll } from '../ui.js';
+import { el, toast, todayKey, addDays, keyToDate, prettyDate, confirmAction, restoreScroll, monthMatrix, shiftMonth, monthLabel } from '../ui.js';
 
 let selectedDay = todayKey();
 let editingId = null;
+let showMonth = false;
+let calMonth = todayKey().slice(0, 7);
+
+/** One-line gist of a day — first entry, trimmed. */
+function dayBrief(d, key) {
+  const entries = (d.journal[key] || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  if (!entries.length) return null;
+  const words = entries.map((e) => e.text).join(' ').replace(/\s+/g, ' ').trim();
+  return { count: entries.length, gist: words.slice(0, 150) + (words.length > 150 ? '…' : '') };
+}
+
+function monthCard(rerender) {
+  const d = getData();
+  const card = el('div', { class: 'card' });
+  card.append(el('div', { class: 'rowflex', style: 'margin-bottom:6px' },
+    el('button', { class: 'btn btn--icon', onClick: () => { calMonth = shiftMonth(calMonth, -1); rerender(); } }, '‹'),
+    el('div', { style: 'flex:1;text-align:center;font-weight:700' }, monthLabel(calMonth)),
+    el('button', { class: 'btn btn--icon', onClick: () => { calMonth = shiftMonth(calMonth, 1); rerender(); } }, '›')));
+
+  const grid = el('div', { class: 'cal' });
+  ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((n) => grid.append(el('div', { class: 'cal__dow' }, n)));
+  for (const key of monthMatrix(calMonth)) {
+    if (!key) { grid.append(el('div', {})); continue; }
+    const b = dayBrief(d, key);
+    const cls = 'cal__cell' + (b ? (b.count >= 3 ? ' cal__cell--l3' : ' cal__cell--l2') : '')
+      + (key === todayKey() ? ' cal__cell--today' : '') + (key === selectedDay ? ' cal__cell--sel' : '');
+    grid.append(el('button', { class: cls, title: b ? `${b.count} entries` : key, onClick: () => { selectedDay = key; showMonth = false; rerender(); } }, String(+key.slice(-2))));
+  }
+  card.append(grid);
+  card.append(el('div', { class: 'hint' }, 'Greener = more entries. Tap a day to open it.'));
+
+  // quick briefs — skim the month without opening each day
+  const days = monthMatrix(calMonth).filter(Boolean).filter((k) => d.journal[k] && d.journal[k].length).reverse();
+  if (days.length) {
+    card.append(el('div', { class: 'section-title', style: 'margin:14px 2px 6px' }, 'At a glance'));
+    days.slice(0, 14).forEach((k) => {
+      const b = dayBrief(d, k);
+      card.append(el('div', { class: 'row', onClick: () => { selectedDay = k; showMonth = false; rerender(); }, style: 'cursor:pointer' },
+        el('div', { class: 'row__main' },
+          el('div', { class: 'row__name' }, prettyDate(keyToDate(k)), ' ', el('span', { class: 'chip' }, `${b.count}`)),
+          el('div', { class: 'row__meta', style: 'display:block' }, b.gist))));
+    });
+  }
+  return card;
+}
 
 function nowHHMM() {
   const n = new Date();
@@ -51,7 +96,12 @@ function render(view) {
   const key = selectedDay;
   const entries = [...(d.journal[key] || [])].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
-  view.append(el('div', { class: 'section-title' }, 'Journal'));
+  view.append(el('div', { class: 'rowflex' },
+    el('div', { class: 'section-title', style: 'flex:1' }, 'Journal'),
+    el('button', { class: 'btn btn--sm' + (showMonth ? ' btn--primary' : ' btn--ghost'), onClick: () => { showMonth = !showMonth; rerender(); } }, showMonth ? '☰ Day' : '📅 Month')));
+
+  if (showMonth) { view.append(monthCard(rerender)); restoreScroll(y); return; }
+
   view.append(dayNav(rerender));
 
   // quick add — the draft is saved as you type, so leaving the app never loses it

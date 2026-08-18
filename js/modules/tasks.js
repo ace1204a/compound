@@ -17,19 +17,29 @@ let showRoutines = false;
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DOW_NUM = [1, 2, 3, 4, 5, 6, 0]; // maps DOW index -> JS getDay()
 
-function routineOnDay(r, key) {
+function routineOnDay(r, key, status) {
   // a repeating task only counts from the day it was created — it must never
   // appear on days that are already in the past and make them look incomplete
   if (r.startDate && key < r.startDate) return false;
+  // work-only / off-only items appear once the day's status is known
+  if (r.only === 'work' && status !== 'working') return false;
+  if (r.only === 'off' && status !== 'off') return false;
   if (r.freq === 'daily') return true;
   const dow = keyToDate(key).getDay();
   return (r.freq.days || []).includes(dow);
 }
 
+/** Is this day a work day or a day off? (null = not decided yet) */
+export function dayStatus(d, key) { return (d.dayStatus || {})[key] || null; }
+export function setDayStatus(key, status) {
+  update((d) => { d.dayStatus = d.dayStatus || {}; if (status) d.dayStatus[key] = status; else delete d.dayStatus[key]; });
+}
+
 /** All items for a day = one-off tasks + routine instances, sorted by time. */
 export function tasksForDay(d, key) {
   const oneoffs = (d.tasks || []).filter((t) => t.date === key).map((t) => ({ ...t, kind: 'task' }));
-  const routineItems = (d.routines || []).filter((r) => routineOnDay(r, key)).map((r) => ({
+  const status = dayStatus(d, key);
+  const routineItems = (d.routines || []).filter((r) => routineOnDay(r, key, status)).map((r) => ({
     id: 'r:' + r.id, routineId: r.id, title: r.title, time: r.time, project: r.project, kind: 'routine',
     done: !!(d.routineDone || {})[r.id + ':' + key],
   }));

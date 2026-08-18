@@ -8,7 +8,7 @@
 
 import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
-const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'journal', 'plan'];
+const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'dayStatus', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'journal', 'plan'];
 const META_KEY = 'compound.sync.meta.v1';
 
 let client = null;
@@ -161,6 +161,7 @@ export const MERGERS = {
     return [...out, ...byId.values()];
   },
   routineDone(local, remote) { return { ...remote, ...local }; },
+  dayStatus(local, remote) { return { ...remote, ...local }; },
   finance(local, remote) {
     const merge = (a, b) => { const m = new Map((b || []).map((x) => [x.id, x])); for (const x of (a || [])) m.set(x.id, { ...(m.get(x.id) || {}), ...x }); return [...m.values()]; };
     return {
@@ -185,9 +186,12 @@ export const MERGERS = {
     for (const [date, ticks] of Object.entries(local.log || {})) log[date] = { ...(log[date] || {}), ...ticks };
     const w = new Map((remote.weights || []).map((x) => [x.date, x]));
     for (const x of (local.weights || [])) w.set(x.date, x);
+    const meals = new Map((remote.meals || []).map((m) => [m.id, m]));
+    for (const m of (local.meals || [])) meals.set(m.id, { ...(meals.get(m.id) || {}), ...m });
     return {
       ...remote, ...local, log,
       weights: [...w.values()].sort((a, b) => a.date.localeCompare(b.date)),
+      meals: [...meals.values()],
       checklist: (local.checklist && local.checklist.length) ? local.checklist : remote.checklist,
     };
   },

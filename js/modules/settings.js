@@ -64,6 +64,13 @@ function importData(file, rerender) {
               }
               continue;
             }
+            // Never assign a value that still carries patch directives — that's
+            // what turned a list into an object and blanked the app once.
+            if (val && typeof val === 'object' && !Array.isArray(val) &&
+                Object.keys(val).some((x) => x.startsWith('__'))) {
+              toast('This patch needs a newer app version — reopen the app twice, then try again');
+              throw new Error(`"${k}" uses a newer patch format than this app version`);
+            }
             // a plan patch must NOT wipe your day-by-day tick history
             if (k === 'plan') { const keepDone = d.plan.done || {}; d.plan = { ...parsed.plan, done: keepDone }; }
             else d[k] = val;
@@ -289,7 +296,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.19 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.21 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

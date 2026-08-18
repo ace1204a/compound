@@ -75,6 +75,25 @@ function migrate(saved) {
   merged.trading = { ...base.trading, ...(saved.trading || {}) };
   merged.finance = { ...base.finance, ...(saved.finance || {}) };
   merged.plan = { ...base.plan, ...(saved.plan || {}) };
+
+  // SELF-REPAIR: if any section ended up the wrong shape (e.g. an old app
+  // version applied a newer patch file literally and turned a list into an
+  // object), fall back to the default shape instead of crashing on load.
+  for (const key of Object.keys(base)) {
+    const want = base[key], got = merged[key];
+    const wantArray = Array.isArray(want);
+    const gotArray = Array.isArray(got);
+    const badType = wantArray ? !gotArray
+      : (want && typeof want === 'object') ? (!got || typeof got !== 'object' || gotArray)
+      : false;
+    // an object still carrying patch directives is also broken
+    const stillAPatch = got && typeof got === 'object' && !gotArray &&
+      ('__patchItems' in got || '__append' in got || '__merge' in got || '__remove' in got);
+    if (badType || (wantArray && stillAPatch)) {
+      console.warn(`Repaired "${key}" — it was the wrong shape, reset to default.`);
+      merged[key] = want;
+    }
+  }
   return merged;
 }
 

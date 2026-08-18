@@ -18,7 +18,9 @@ function totalPages(b) { return (b.sessions || []).reduce((n, s) => n + (+s.page
 
 function currentCard(cur, rerender) {
   const d = getData();
-  const pages = el('input', { type: 'number', placeholder: 'pages read today', min: '1', inputmode: 'numeric', style: 'max-width:150px' });
+  // accepts either a count ("12") or a page range ("159-167")
+  const pages = el('input', { type: 'text', placeholder: 'pages — 12  or  159-167', inputmode: 'numeric', style: 'max-width:180px' });
+  const pdate = el('input', { type: 'date', value: todayKey(), style: 'max-width:150px' });
   const last7 = Array.from({ length: 7 }, (_, i) => addDays(todayKey(), i - 6));
   const weekPages = last7.reduce((n, k) => n + pagesOn(d, k), 0);
 
@@ -32,18 +34,31 @@ function currentCard(cur, rerender) {
     el('div', { class: 'row__meta', style: 'margin-top:6px' },
       el('span', { class: 'chip' }, `${weekPages} pages this week`),
       pagesOn(d, todayKey()) ? el('span', { class: 'chip chip--key' }, `${pagesOn(d, todayKey())} today ✓`) : null),
-    el('div', { class: 'rowflex', style: 'margin-top:10px' }, pages,
+    el('div', { class: 'rowflex', style: 'margin-top:10px' }, pages, pdate,
       el('button', { class: 'btn btn--primary', onClick: () => {
-        const n = +pages.value;
-        if (!n) { toast('How many pages?'); return; }
+        const raw = pages.value.trim();
+        const range = raw.match(/^(\d+)\s*[-–to]+\s*(\d+)$/i);
+        const n = range ? (Math.abs(+range[2] - +range[1]) + 1) : (parseInt(raw, 10) || 0);
+        if (!n) { toast('Pages — e.g. 12 or 159-167'); return; }
+        const when = pdate.value || todayKey();
         update((x) => {
           const b = x.books.find((a) => a.id === cur.id);
           b.sessions = b.sessions || [];
-          b.sessions.push({ date: todayKey(), pages: n });
+          b.sessions.push({ date: when, pages: n, from: range ? +range[1] : null, to: range ? +range[2] : null });
         });
         pages.value = '';
-        toast(`${n} pages logged 📖`); rerender();
+        toast(`${n} pages logged 📖${range ? ` (p${range[1]}–${range[2]})` : ''}`); rerender();
       } }, 'Log pages')),
+    // recent reading sessions — editable/removable
+    (cur.sessions || []).length ? el('div', { style: 'margin-top:10px' },
+      ...[...cur.sessions].reverse().slice(0, 5).map((s, i, arr) => el('div', { class: 'row' },
+        el('div', { class: 'row__main' },
+          el('div', { class: 'row__name' }, `${s.pages} pages${s.from ? ` · p${s.from}–${s.to}` : ''}`),
+          el('div', { class: 'row__meta' }, s.date)),
+        el('button', { class: 'btn btn--icon', title: 'Remove', onClick: () => {
+          update((x) => { const b = x.books.find((a) => a.id === cur.id); const idx = b.sessions.lastIndexOf(s); if (idx > -1) b.sessions.splice(idx, 1); });
+          rerender();
+        } }, '×')))) : null,
     el('div', { class: 'rowflex', style: 'margin-top:10px' }, highlight,
       el('button', { class: 'btn', onClick: () => {
         const v = highlight.value.trim();

@@ -54,15 +54,27 @@ function render(view) {
   view.append(el('div', { class: 'section-title' }, 'Journal'));
   view.append(dayNav(rerender));
 
-  // quick add
+  // quick add — the draft is saved as you type, so leaving the app never loses it
+  const DRAFT_KEY = 'compound.journal.draft.' + key;
   const text = el('textarea', { placeholder: 'What’s on your mind? How are you feeling, what have you done…' });
+  try { text.value = localStorage.getItem(DRAFT_KEY) || ''; } catch (_) {}
+  const saveDraft = () => { try { text.value.trim() ? localStorage.setItem(DRAFT_KEY, text.value) : localStorage.removeItem(DRAFT_KEY); } catch (_) {} };
+  text.addEventListener('input', saveDraft);
+  text.addEventListener('blur', saveDraft);
+  window.addEventListener('pagehide', saveDraft);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveDraft(); });
+
+  const draftNote = el('div', { class: 'hint' }, text.value.trim() ? '📝 Unsaved draft restored — finish it and add the note.' : 'Saves as you type. Safe to leave the app mid-sentence.');
   const add = () => {
     const v = text.value.trim();
     if (!v) { toast('Write something first'); return; }
     update((x) => { x.journal[key] = x.journal[key] || []; x.journal[key].push({ id: uid(), time: nowHHMM(), text: v }); });
-    text.value = ''; toast('Noted'); rerender();
+    text.value = ''; try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+    toast('Noted'); rerender();
   };
-  view.append(el('div', { class: 'card' }, text, el('button', { class: 'btn btn--primary btn--full', style: 'margin-top:8px', onClick: add }, '+ Add note')));
+  view.append(el('div', { class: 'card' }, text,
+    el('button', { class: 'btn btn--primary btn--full', style: 'margin-top:8px', onClick: add }, '+ Add note'),
+    draftNote));
 
   if (!entries.length) {
     view.append(el('div', { class: 'card empty' }, el('span', { class: 'empty__emoji' }, '📓'), el('div', {}, 'No entries for this day yet.')));

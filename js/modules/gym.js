@@ -117,6 +117,13 @@ function makeEntry(d, name) {
 }
 function pickerAdd(name, rerender) {
   const d = getData();
+  if (String(pickerTarget).startsWith('replace:')) {
+    const ei = +String(pickerTarget).split(':')[1];
+    update((x) => { const fresh = makeEntry(x, name); x.gym.draft.entries[ei] = { ...fresh, id: x.gym.draft.entries[ei].id || fresh.id }; });
+    toast('Swapped to ' + name);
+    pickerTarget = 'draft';
+    return;
+  }
   if (pickerTarget === 'draft') {
     update((x) => { x.gym.draft.entries.push(makeEntry(x, name)); });
   } else {
@@ -264,6 +271,7 @@ function draftCard(rerender) {
       handle,
       el('span', { class: 'chip chip--tag' }, bodyPart(entry.exercise)),
       name,
+      el('button', { class: 'btn btn--icon', title: 'Replace with another exercise', onClick: () => { pickerTarget = 'replace:' + ei; pickerOpen = true; rerender(); } }, '⇄'),
       el('button', { class: 'btn btn--icon', title: 'Move up', onClick: () => { update((x) => moveItem(x.gym.draft.entries, ei, -1)); rerender(); } }, '↑'),
       el('button', { class: 'btn btn--icon', title: 'Move down', onClick: () => { update((x) => moveItem(x.gym.draft.entries, ei, 1)); rerender(); } }, '↓'),
       el('button', { class: 'btn btn--icon', title: 'Remove exercise', onClick: () => { update((x) => { x.gym.draft.entries.splice(ei, 1); }); rerender(); } }, '×')));
@@ -366,6 +374,9 @@ function historyCalendar(rerender) {
   const d = getData();
   const byDate = {};
   for (const s of d.gym.sessions) (byDate[s.date] = byDate[s.date] || []).push(s);
+  // cardio counts as a training day too — a run is training
+  const cardioByDate = {};
+  for (const c of (d.gym.cardio || [])) (cardioByDate[c.date] = cardioByDate[c.date] || []).push(c);
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'rowflex', style: 'margin-bottom:6px' },
     el('button', { class: 'btn btn--icon', onClick: () => { gymCalMonth = shiftMonth(gymCalMonth, -1); rerender(); } }, '‹'),
@@ -376,18 +387,25 @@ function historyCalendar(rerender) {
   for (const key of monthMatrix(gymCalMonth)) {
     if (!key) { grid.append(el('div', {})); continue; }
     const has = byDate[key];
+    const ran = cardioByDate[key];
     const sel = calSelected === key;
-    const cls = 'cal__cell' + (has ? ' cal__cell--l3' : '') + (key === todayKey() ? ' cal__cell--today' : '') + (sel ? ' cal__cell--sel' : '');
-    grid.append(el('button', { class: cls, title: has ? has.map((s) => s.name).join(', ') : key, onClick: () => { calSelected = (calSelected === key ? null : key); rerender(); } }, String(+key.slice(-2))));
+    const cls = 'cal__cell' + (has ? ' cal__cell--l3' : ran ? ' cal__cell--l2' : '') + (key === todayKey() ? ' cal__cell--today' : '') + (sel ? ' cal__cell--sel' : '');
+    const title = [...(has || []).map((s) => s.name), ...(ran || []).map((c) => `${c.type} ${c.distance || ''}km`)].join(', ') || key;
+    grid.append(el('button', { class: cls, title, onClick: () => { calSelected = (calSelected === key ? null : key); rerender(); } }, String(+key.slice(-2))));
   }
   card.append(grid);
 
   // show the selected day's workout right here, under the calendar
   if (calSelected) {
     const sessions = byDate[calSelected] || [];
+    const runsThatDay = cardioByDate[calSelected] || [];
     const panel = el('div', { style: 'border-top:1px solid var(--line);margin-top:12px;padding-top:12px' });
     panel.append(el('div', { class: 'card__title', style: 'margin-bottom:6px' }, calSelected));
-    if (!sessions.length) panel.append(el('div', { class: 'empty muted' }, 'No workout logged this day.'));
+    runsThatDay.forEach((c) => {
+      panel.append(el('div', { class: 'row__name', style: 'margin-top:6px' }, `🏃 ${c.type}${c.distance ? ' · ' + c.distance + 'km' : ''} · ${c.minutes}min`));
+      if (c.note) panel.append(el('div', { class: 'hint' }, '📝 ' + c.note));
+    });
+    if (!sessions.length && !runsThatDay.length) panel.append(el('div', { class: 'empty muted' }, 'Nothing logged this day.'));
     sessions.forEach((s) => {
       panel.append(el('div', { class: 'row__name', style: 'margin-top:8px' }, s.name));
       (s.entries || []).forEach((e) => {
@@ -437,19 +455,42 @@ function historyCard(rerender) {
 function cardioCard(rerender) {
   const d = getData();
   const list = [...(d.gym.cardio || [])].sort((a, b) => b.date.localeCompare(a.date));
-  const runs = list.filter((c) => c.type === 'Run' && +c.distance >= 4.5 && +c.minutes > 0);
-  const best = runs.length ? runs.reduce((b, r) => (r.minutes / r.distance < b.minutes / b.distance ? r : b)) : null;
+  // best 5k = fastest *5k-equivalent* by pace, shown as a time for 5km (not the
+  // raw duration of a longer run, which was the old bug)
+  const paced = list.filter((c) => c.type === 'Run' && +c.distance >= 3 && +c.minutes > 0);
+  const best = paced.length ? paced.reduce((b, r) => (r.minutes / r.distance < b.minutes / b.distance ? r : b)) : null;
+  const bestLabel = best ? (() => {
+    const t = (best.minutes / best.distance) * 5;
+    return `${Math.floor(t)}:${String(Math.round((t % 1) * 60)).padStart(2, '0')}`;
+  })() : null;
+
   const card = el('div', { class: 'card' });
-  card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, '🏃 Cardio & engine'), best ? el('span', { class: 'chip chip--streak' }, `5k best ${best.minutes}min`) : null));
+  card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, '🏃 Cardio & engine'),
+    best ? el('span', { class: 'chip chip--streak', title: `from ${best.distance}km in ${best.minutes}min on ${best.date}` }, `5k pace best ${bestLabel}`) : null));
   const type = el('select', {}, ...['Run', 'Football', 'Walk', 'Bike', 'Sprints', 'Other'].map((t) => el('option', { value: t }, t)));
   const distance = el('input', { type: 'number', placeholder: 'km', step: '0.1', min: '0', inputmode: 'decimal', style: 'max-width:90px' });
   const minutes = el('input', { type: 'number', placeholder: 'mins', min: '0', inputmode: 'numeric', style: 'max-width:90px' });
-  card.append(el('div', { class: 'rowflex' }, type, distance, minutes,
-    el('button', { class: 'btn', onClick: () => { if (!+minutes.value) { toast('How many minutes?'); return; } update((x) => { x.gym.cardio = x.gym.cardio || []; x.gym.cardio.unshift({ id: uid(), date: todayKey(), type: type.value, distance: +distance.value || 0, minutes: +minutes.value }); }); distance.value = ''; minutes.value = ''; toast('Logged 🏃'); rerender(); } }, 'Log')));
-  list.slice(0, 6).forEach((c) => {
-    const pace = (c.distance && c.minutes) ? ` · ${(c.minutes / c.distance).toFixed(1)} min/km` : '';
-    card.append(el('div', { class: 'row' }, el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, `${c.type}${c.distance ? ' · ' + c.distance + 'km' : ''} · ${c.minutes}min`), el('div', { class: 'row__meta' }, c.date + pace)),
-      el('button', { class: 'btn btn--icon', onClick: () => { update((x) => { x.gym.cardio = x.gym.cardio.filter((y) => y.id !== c.id); }); rerender(); } }, '×')));
+  const cdate = el('input', { type: 'date', value: todayKey(), style: 'max-width:150px' });
+  const cnote = el('input', { type: 'text', placeholder: 'Run report / how it felt (optional)', maxlength: '400' });
+  card.append(el('div', { class: 'stack' },
+    el('div', { class: 'rowflex' }, type, distance, minutes, cdate),
+    el('div', { class: 'rowflex' }, cnote,
+      el('button', { class: 'btn btn--primary', onClick: () => {
+        if (!+minutes.value) { toast('How many minutes?'); return; }
+        update((x) => { x.gym.cardio = x.gym.cardio || []; x.gym.cardio.unshift({ id: uid(), date: cdate.value || todayKey(), type: type.value, distance: +distance.value || 0, minutes: +minutes.value, note: cnote.value.trim() }); });
+        distance.value = ''; minutes.value = ''; cnote.value = ''; toast('Logged 🏃'); rerender();
+      } }, 'Log'))));
+
+  list.slice(0, 8).forEach((c) => {
+    const pace = (c.distance && c.minutes) ? ` · ${(c.minutes / c.distance).toFixed(2)} min/km` : '';
+    const noteIn = el('input', { class: 'exnote', type: 'text', value: c.note || '', placeholder: '📝 run report…', maxlength: '400' });
+    noteIn.addEventListener('change', () => { update((x) => { const t = x.gym.cardio.find((y) => y.id === c.id); if (t) t.note = noteIn.value.trim(); }); toast('Saved'); });
+    const row = el('div', { style: 'border-top:1px solid var(--line);padding:10px 0' },
+      el('div', { class: 'rowflex' },
+        el('div', { class: 'row__main' }, el('div', { class: 'row__name' }, `${c.type}${c.distance ? ' · ' + c.distance + 'km' : ''} · ${c.minutes}min`), el('div', { class: 'row__meta' }, c.date + pace)),
+        el('button', { class: 'btn btn--icon', onClick: () => { update((x) => { x.gym.cardio = x.gym.cardio.filter((y) => y.id !== c.id); }); rerender(); } }, '×')),
+      noteIn);
+    card.append(row);
   });
   if (!list.length) card.append(el('div', { class: 'empty muted' }, 'No cardio logged yet.'));
   return card;
@@ -465,7 +506,7 @@ function render(view) {
   view.append(el('div', { class: 'section-title' }, 'Gym'));
   if (d.gym.draft) {
     view.append(draftCard(rerender));
-    if (pickerOpen && pickerTarget === 'draft') view.append(pickerPanel(rerender));
+    if (pickerOpen && (pickerTarget === 'draft' || String(pickerTarget).startsWith('replace:'))) view.append(pickerPanel(rerender));
   } else {
     view.append(templatesCard(rerender));
   }

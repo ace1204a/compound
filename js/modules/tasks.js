@@ -18,6 +18,9 @@ const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DOW_NUM = [1, 2, 3, 4, 5, 6, 0]; // maps DOW index -> JS getDay()
 
 function routineOnDay(r, key) {
+  // a repeating task only counts from the day it was created — it must never
+  // appear on days that are already in the past and make them look incomplete
+  if (r.startDate && key < r.startDate) return false;
   if (r.freq === 'daily') return true;
   const dow = keyToDate(key).getDay();
   return (r.freq.days || []).includes(dow);
@@ -86,10 +89,10 @@ function addForm(rerender) {
     if (repeat === 'once') {
       update((d) => { d.tasks.push({ id: uid(), title: t, date: selectedDay, time: tm, project: null, done: false, order: (d.tasks.filter((x) => x.date === selectedDay).length), createdAt: new Date().toISOString(), completedAt: null }); });
     } else if (repeat === 'daily') {
-      update((d) => { d.routines.push({ id: uid(), title: t, time: tm, freq: 'daily', project: null }); });
+      update((d) => { d.routines.push({ id: uid(), title: t, time: tm, freq: 'daily', project: null, startDate: selectedDay }); });
     } else {
       if (!days.length) { toast('Pick at least one day'); return; }
-      update((d) => { d.routines.push({ id: uid(), title: t, time: tm, freq: { days: [...days] }, project: null }); });
+      update((d) => { d.routines.push({ id: uid(), title: t, time: tm, freq: { days: [...days] }, project: null, startDate: selectedDay }); });
     }
     title.value = ''; time.value = '';
     toast(repeat === 'once' ? 'Task added' : 'Repeating task added'); rerender();

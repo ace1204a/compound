@@ -7,7 +7,9 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { el, toast, todayKey, addDays, keyToDate, confirmAction } from '../ui.js';
+import { el, toast, todayKey, addDays, keyToDate, prettyDate, confirmAction, restoreScroll } from '../ui.js';
+
+let selectedDay = todayKey();   // which session day the top card is editing
 
 /** Number input that ACCEPTS A MINUS SIGN on phones (iOS number pads hide it). */
 function numInput(props = {}) {
@@ -40,13 +42,22 @@ export function cleanRun(d) {
 
 function todayCard(rerender) {
   const d = getData();
-  const key = todayKey();
+  const key = selectedDay;                    // any day — not just today
   const day = d.trading.log[key];
   const run = cleanRun(d);
+  const isToday = key === todayKey();
 
   const card = el('div', { class: 'card card--accent' });
+
+  // day navigation — log or fix any session, not just today's
+  card.append(el('div', { class: 'rowflex', style: 'margin-bottom:10px' },
+    el('button', { class: 'btn btn--icon', onClick: () => { selectedDay = addDays(selectedDay, -1); rerender(); } }, '‹'),
+    el('div', { style: 'flex:1;text-align:center;font-weight:700' }, isToday ? 'Today' : prettyDate(keyToDate(key))),
+    el('button', { class: 'btn btn--icon', onClick: () => { selectedDay = addDays(selectedDay, 1); rerender(); } }, '›'),
+    !isToday ? el('button', { class: 'btn btn--sm', onClick: () => { selectedDay = todayKey(); rerender(); } }, 'Today') : null));
+
   card.append(el('div', { class: 'card__head' },
-    el('div', { class: 'card__title' }, '⇅ Today’s session'),
+    el('div', { class: 'card__title' }, isToday ? '⇅ Today’s session' : '⇅ Session'),
     run > 0 ? el('span', { class: 'chip chip--streak' }, `🔥 ${run} clean in a row`) : el('span', { class: 'card__sub' }, 'log after you trade')));
 
   if (!d.trading.rules.length) {
@@ -190,7 +201,9 @@ function calendarCard(rerender) {
       }
     }
     if (k === todayKey()) cls += ' cal__cell--today';
-    grid.append(el('div', { class: cls, title: k }, label));
+    if (k === selectedDay) cls += ' cal__cell--sel';
+    // tap a day to load it into the session card above
+    grid.append(el('button', { class: cls, title: k, onClick: () => { selectedDay = k; rerender(); window.scrollTo(0, 0); } }, label));
   }
   card.append(grid);
   card.append(el('div', { class: 'hint' },
@@ -219,6 +232,7 @@ function historyCard(rerender) {
 }
 
 function render(view) {
+  const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   view.append(el('div', { class: 'section-title' }, 'Trading discipline'));
@@ -233,6 +247,7 @@ function render(view) {
   view.append(calendarCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Session history'));
   view.append(historyCard(rerender));
+  restoreScroll(y);
 }
 
 export default { render };

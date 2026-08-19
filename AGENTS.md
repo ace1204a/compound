@@ -90,3 +90,29 @@ Compound is a static site with no backend. So:
 - Current version: see the About card in `js/modules/settings.js` and `VERSION` in `sw.js`.
 - Sync merges by module; a patch file with `{"__merge": {...}}` updates only listed fields,
   `{"__append": [...]}` adds array items. Used to ship plan/rules updates without wiping data.
+
+## The AI coach (v0.23+)
+
+`js/modules/coach.js` is a conversation, nothing else. It deliberately does NOT
+add promises, reflections or weekly reviews — Habits, Today and Journal already
+own those, and duplicating them splits the data.
+
+Three rules, none of them optional:
+
+1. **The Anthropic API key lives only in `Deno.env` inside
+   `supabase/functions/coach/`.** Never in `js/`. Everything in `js/` is served
+   to the browser and this repo is public.
+2. **No personal facts in this repo.** The coach's persona (`PERSONA` in the
+   edge function) is style and guardrails only. Who the user is arrives at
+   request time in `coach.profile`, which is private synced data delivered by a
+   patch file from `_mydata/`.
+3. **The spend cap fails closed.** If `coach_usage` can't be read, the function
+   refuses to call the API at all. Do not "fix" this by defaulting to zero.
+
+Setup is three steps: run `supabase/coach-usage.sql`, deploy the function, set
+`ANTHROPIC_API_KEY`. Optional env: `COACH_CAP_CALLS_PER_DAY`,
+`COACH_CAP_USD_PER_DAY`, `COACH_CAP_USD_PER_MONTH`.
+
+Context sent to the coach comes from `buildBrief()` in `js/modules/settings.js`
+— the same brief the "copy coach brief" button produces. Extend that one
+function when new data should be visible to the coach.

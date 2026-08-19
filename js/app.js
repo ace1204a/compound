@@ -9,6 +9,7 @@ import { el, clear, prettyDate, todayKey, toast } from './ui.js';
 import * as sync from './sync.js';
 
 import today from './modules/today.js';
+import coach from './modules/coach.js';
 import plan from './modules/plan.js';
 import habits from './modules/habits.js';
 import tasks from './modules/tasks.js';
@@ -25,7 +26,7 @@ import settings from './modules/settings.js';
 import { TABS, visibleIds } from './tabs.js';
 
 // tab id -> render module
-const REG = { today, plan, habits, tasks, goals, gym, diet, trading, inbox, finance, books, journal, settings };
+const REG = { today, coach, plan, habits, tasks, goals, gym, diet, trading, inbox, finance, books, journal, settings };
 // full registry: tab metadata + its render module
 const MODULES = TABS.map((t) => ({ ...t, mod: REG[t.id] }));
 const BY_ID = Object.fromEntries(MODULES.map((m) => [m.id, m]));

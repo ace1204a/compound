@@ -7,6 +7,7 @@
 
 export const TABS = [
   { id: 'today',    label: 'Today',    icon: '◎' },
+  { id: 'coach',    label: 'Coach',    icon: '☯' },
   { id: 'plan',     label: 'Plan',     icon: '▤' },
   { id: 'habits',   label: 'Habits',   icon: '✓' },
   { id: 'tasks',    label: 'Tasks',    icon: '☰' },

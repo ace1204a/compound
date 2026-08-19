@@ -8,7 +8,7 @@
 
 import { getData, replaceAll, save, subscribe, emptyModule } from './store.js';
 
-const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'dayStatus', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'journal', 'plan'];
+const SYNC_MODULES = ['habits', 'daily', 'tasks', 'routines', 'routineDone', 'dayStatus', 'checkins', 'goals', 'gym', 'diet', 'trading', 'inbox', 'finance', 'books', 'journal', 'plan', 'coach'];
 const META_KEY = 'compound.sync.meta.v1';
 
 let client = null;
@@ -97,6 +97,23 @@ export async function currentUser() {
   } catch { return null; }
 }
 
+/** Call an authenticated Edge Function. Provider secrets stay server-side. */
+export async function invokeFunction(name, body) {
+  if (!configured()) throw new Error('Connect cloud sync in Settings first');
+  const c = await ensureClient();
+  const { data: auth } = await c.auth.getSession();
+  if (!auth.session) throw new Error('Sign in to cloud sync first — the coach needs your account');
+  const { data, error } = await c.functions.invoke(name, { body });
+  // Supabase wraps non-2xx as an error but keeps the JSON body — dig the real message out.
+  if (error) {
+    let msg = error.message || 'Request failed';
+    try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 // ---------- sync decision (pure + testable) ----------
 /** JSON.stringify with object keys sorted (arrays keep order). Two objects
  *  holding the same DATA always produce the same string, even if their keys
@@ -117,6 +134,17 @@ export function stableStringify(value) {
 // (Known tradeoff: an item deleted on one device while edited on the other
 // can come back — acceptable for a one-person, two-device system.)
 export const MERGERS = {
+  // Chat is append-only in practice, so union by id and keep the newest 60.
+  coach(local, remote) {
+    const byId = new Map((remote.messages || []).map((m) => [m.id, m]));
+    for (const m of (local.messages || [])) byId.set(m.id, m);
+    return {
+      ...remote,
+      ...local,
+      profile: local.profile || remote.profile || '',
+      messages: [...byId.values()].sort((a, b) => (a.at || '').localeCompare(b.at || '')).slice(-60),
+    };
+  },
   habits(local, remote) {
     const byId = new Map(remote.map((h) => [h.id, h]));
     const out = local.map((l) => {

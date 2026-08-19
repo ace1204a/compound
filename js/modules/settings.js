@@ -5,12 +5,13 @@
 // ============================================================
 
 import { getData, update, replaceAll, resetAll, uid } from '../store.js';
-import { el, toast, confirmAction, todayKey, addDays } from '../ui.js';
+import { el, toast, confirmAction, todayKey, addDays, timeToMin } from '../ui.js';
 import * as sync from '../sync.js';
 import { TABS, LOCKED, orderedIds } from '../tabs.js';
 import { computeStreaks } from './habits.js';
 import { cleanStreak } from './diet.js';
 import { cleanRun } from './trading.js';
+import { nowAndNextTask, tasksForDay } from './tasks.js';
 
 function exportData() {
   const blob = new Blob([JSON.stringify(getData(), null, 2)], { type: 'application/json' });
@@ -93,9 +94,29 @@ function importData(file, rerender) {
 }
 
 // ---------- Coach brief ----------
-function buildBrief() {
+export function buildBrief() {
   const d = getData();
-  const lines = [`COMPOUND COACH BRIEF — ${todayKey()}`, ''];
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  const lines = [`COMPOUND COACH BRIEF — ${todayKey()} ${hhmm} (${now.toLocaleDateString('en-GB', { weekday: 'long' })})`, ''];
+
+  // What he is meant to be doing right this minute — the coach's most useful fact.
+  const status = (d.dayStatus || {})[todayKey()];
+  lines.push(`DAY TYPE: ${status ? status : 'not set yet'}`);
+  try {
+    const { current, next } = nowAndNextTask(d, todayKey());
+    const label = (t) => `${t.time || ''} ${t.title || t.text || ''}`.trim();
+    const list = tasksForDay(d, todayKey());
+    if (current) lines.push(`RIGHT NOW: ${label(current)}${current.done ? ' [ticked]' : ' [NOT ticked]'}`);
+    if (next) lines.push(`NEXT: ${label(next)}`);
+    if (list.length) {
+      lines.push(`SCHEDULE TODAY: ${list.filter((t) => t.done).length}/${list.length} ticked`);
+      const missed = list.filter((t) => !t.done && t.time && timeToMin(t.time) != null
+        && timeToMin(t.time) < now.getHours() * 60 + now.getMinutes());
+      if (missed.length) lines.push(`MISSED SO FAR: ${missed.map(label).join(' · ')}`);
+    }
+  } catch (_) {}
+  lines.push('');
 
   if (d.habits.length) {
     lines.push('HABITS:');
@@ -155,6 +176,39 @@ function buildBrief() {
   if (reading) lines.push(`READING: ${reading.title} — ${(reading.sessions || []).reduce((n, s) => n + (+s.pages || 0), 0)} pages, ${(reading.highlights || []).length} highlights`);
   const newInbox = d.inbox.filter((i) => i.status === 'new').length;
   if (newInbox) lines.push(`INBOX: ${newInbox} items waiting for review`);
+
+  // Weight trend the same way the Diet tab computes it, so the coach and the
+  // app never disagree about whether the cut is moving.
+  const avg = (from, to) => {
+    const xs = (d.diet.weights || []).filter((w) => w.date > from && w.date <= to).map((w) => +w.kg).filter(Number.isFinite);
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  };
+  const thisWk = avg(addDays(todayKey(), -7), todayKey());
+  const lastWk = avg(addDays(todayKey(), -14), addDays(todayKey(), -7));
+  if (thisWk != null && lastWk != null) {
+    lines.push(`CUT: 7-day avg ${thisWk.toFixed(2)} kg vs ${lastWk.toFixed(2)} kg previous = ${(thisWk - lastWk >= 0 ? '+' : '') + (thisWk - lastWk).toFixed(2)} kg/wk (target loss 0.3–0.7)`);
+  } else if (thisWk == null) {
+    lines.push('CUT: not enough weigh-ins this week to compute a trend');
+  }
+
+  const meals = (d.diet.meals || []).filter((m) => m.state !== 'eaten').length;
+  if ((d.diet.meals || []).length) lines.push(`MEAL PREP: ${meals} portions left${meals <= 2 ? ' — COOK NEEDED' : ''}`);
+
+  const goals = (d.goals || []).filter((g) => g.status === 'active');
+  if (goals.length) { lines.push('', 'ACTIVE GOALS:'); goals.slice(0, 8).forEach((g) => lines.push(`- [${g.area || 'life'}] ${g.title}`)); }
+
+  // The journal is where the real story is — give the coach today in full and
+  // the two days before it as gists, so it can spot a pattern rather than react.
+  const jToday = d.journal[todayKey()] || [];
+  if (jToday.length) {
+    lines.push('', "TODAY'S JOURNAL:");
+    jToday.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach((e) => lines.push(`  ${e.time} — ${e.text.slice(0, 600)}`));
+  }
+  const recent = [addDays(todayKey(), -1), addDays(todayKey(), -2)].filter((k) => (d.journal[k] || []).length);
+  if (recent.length) {
+    lines.push('', 'PREVIOUS DAYS (gist):');
+    recent.forEach((k) => lines.push(`- ${k}: ${(d.journal[k] || []).map((e) => e.text).join(' ').replace(/\s+/g, ' ').slice(0, 500)}…`));
+  }
 
   return lines.join('\n');
 }
@@ -296,7 +350,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.22 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.23 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

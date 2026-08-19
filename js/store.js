@@ -54,6 +54,11 @@ function defaultData() {
     },
     books: [],        // { id, title, author, status, notes, highlights:[], sessions:[{date,pages}], addedAt }
     journal: {},      // 'YYYY-MM-DD' -> [ { id, time:'HH:MM', text } ]  — running diary through the day
+    coach: {          // the in-app AI coach
+      profile: '',    // who the coach is coaching — private, arrives by patch, never in git
+      messages: [],   // { id, role:'user'|'assistant', text, at }  — last 60 kept
+      model: 'standard', // 'standard' (cheap, daily) | 'deep' (expensive, hard conversations)
+    },
     plan: {           // the living protocol — content arrives via plan patches, never hardcoded
       updated: '',
       note: '',
@@ -77,6 +82,7 @@ function migrate(saved) {
   merged.trading = { ...base.trading, ...(saved.trading || {}) };
   merged.finance = { ...base.finance, ...(saved.finance || {}) };
   merged.plan = { ...base.plan, ...(saved.plan || {}) };
+  merged.coach = { ...base.coach, ...(saved.coach || {}) };
 
   // SELF-REPAIR: if any section ended up the wrong shape (e.g. an old app
   // version applied a newer patch file literally and turned a list into an

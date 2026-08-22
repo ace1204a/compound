@@ -111,8 +111,13 @@ Deno.serve(async (req: Request) => {
   const user = token ? await userFromToken(token) : null;
   if (!user) return json({ error: 'Sign in to cloud sync first — the coach needs your account.' }, 401);
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+  // .trim() matters: a trailing newline pasted into the secret becomes an
+  // invalid header value, and fetch() throws before the request is ever sent.
+  const apiKey = (Deno.env.get('ANTHROPIC_API_KEY') || '').trim();
   if (!apiKey) return json({ error: 'Coach is not configured yet (missing API key).' }, 503);
+  if (!/^[\x20-\x7E]+$/.test(apiKey)) {
+    return json({ error: 'The ANTHROPIC_API_KEY secret has a line break or hidden character in it. Delete the secret in Supabase and paste it again using the Copy button.' }, 503);
+  }
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
@@ -149,7 +154,11 @@ Deno.serve(async (req: Request) => {
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model: model.id, max_tokens: 1200, system, messages: [...history, { role: 'user', content: message }] }),
     });
-  } catch { return json({ error: 'Could not reach the AI provider. Try again in a moment.' }, 502); }
+  } catch (e) {
+    // Never swallow this one — the real message is the only clue to whether it
+    // was DNS, a bad header, or the network, and guessing wastes the user's time.
+    return json({ error: `Could not reach the AI provider — ${e instanceof Error ? e.message : String(e)}` }, 502);
+  }
 
   const result = await upstream.json().catch(() => null);
   if (!upstream.ok) {

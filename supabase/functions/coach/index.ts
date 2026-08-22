@@ -24,9 +24,11 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 
 // ---------- spend cap ----------
 // Prices in USD per million tokens. Update if Anthropic's pricing moves.
-const MODELS: Record<string, { id: string; in: number; out: number; label: string }> = {
-  standard: { id: 'claude-sonnet-5', in: 3, out: 15, label: 'Sonnet 5' },
-  deep: { id: 'claude-opus-5', in: 15, out: 75, label: 'Opus 5' },
+// `effort` controls how much the model thinks: thinking tokens are billed as
+// output, so this is the main cost dial. Low/medium are strong on these models.
+const MODELS: Record<string, { id: string; in: number; out: number; label: string; effort: string }> = {
+  standard: { id: 'claude-sonnet-5', in: 3, out: 15, label: 'Sonnet 5', effort: 'low' },
+  deep: { id: 'claude-opus-5', in: 5, out: 25, label: 'Opus 5', effort: 'medium' },
 };
 const CAP_CALLS_PER_DAY = Number(Deno.env.get('COACH_CAP_CALLS_PER_DAY') ?? 25);
 const CAP_USD_PER_DAY = Number(Deno.env.get('COACH_CAP_USD_PER_DAY') ?? 1.0);
@@ -152,7 +154,17 @@ Deno.serve(async (req: Request) => {
     upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: model.id, max_tokens: 1200, system, messages: [...history, { role: 'user', content: message }] }),
+      body: JSON.stringify({
+        model: model.id,
+        // max_tokens caps thinking AND the reply together. These models think by
+        // default, so a tight budget gets spent thinking and returns no text at
+        // all. Leave real headroom — it's a ceiling, not a spend.
+        max_tokens: 8000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: model.effort },
+        system,
+        messages: [...history, { role: 'user', content: message }],
+      }),
     });
   } catch (e) {
     // Never swallow this one — the real message is the only clue to whether it
@@ -166,9 +178,15 @@ Deno.serve(async (req: Request) => {
     return json({ error: `AI provider rejected the request${detail}` }, 502);
   }
 
-  const part = result && Array.isArray(result.content) ? result.content.find((p: { type?: string }) => p.type === 'text') : null;
-  const reply = part && typeof part.text === 'string' ? part.text.trim() : '';
-  if (!reply) return json({ error: 'The coach returned an empty reply. Try again.' }, 502);
+  // Join every text block — a reply can arrive split across several, and the
+  // thinking block (which carries no readable text) sits alongside them.
+  const blocks: { type?: string; text?: string }[] = Array.isArray(result.content) ? result.content : [];
+  const reply = blocks.filter((p) => p.type === 'text' && typeof p.text === 'string').map((p) => p.text).join('\n').trim();
+  if (!reply) {
+    if (result.stop_reason === 'refusal') return json({ error: 'The coach declined to answer that one. Rephrase it and try again.' }, 502);
+    if (result.stop_reason === 'max_tokens') return json({ error: 'The coach ran out of room before it finished writing. Try a shorter question.' }, 502);
+    return json({ error: `The coach returned no text (stop_reason: ${result.stop_reason}; blocks: ${blocks.map((b) => b.type).join(',') || 'none'})` }, 502);
+  }
 
   const inTok = (result.usage && result.usage.input_tokens) || 0;
   const outTok = (result.usage && result.usage.output_tokens) || 0;

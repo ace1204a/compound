@@ -56,7 +56,7 @@ function render(view) {
   const modelSeg = el('div', { class: 'seg seg--sm' },
     el('button', { class: d.coach.model !== 'deep' ? 'on' : '', title: 'Sonnet 5 — about 2p a message',
       onClick: () => { update((x) => { x.coach.model = 'standard'; }); rerender(); } }, 'Standard'),
-    el('button', { class: d.coach.model === 'deep' ? 'on' : '', title: 'Opus 5 — about 11p a message. Worth it for hard conversations.',
+    el('button', { class: d.coach.model === 'deep' ? 'on' : '', title: 'Opus 5 — about 5p a message. Worth it for hard conversations.',
       onClick: () => { update((x) => { x.coach.model = 'deep'; }); rerender(); } }, 'Deep'));
 
   view.append(el('div', { class: 'rowflex' },

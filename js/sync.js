@@ -216,8 +216,9 @@ export const MERGERS = {
     for (const x of (local.weights || [])) w.set(x.date, x);
     const meals = new Map((remote.meals || []).map((m) => [m.id, m]));
     for (const m of (local.meals || [])) meals.set(m.id, { ...(meals.get(m.id) || {}), ...m });
+    const intake = { ...(remote.intake || {}), ...(local.intake || {}) };
     return {
-      ...remote, ...local, log,
+      ...remote, ...local, log, intake,
       weights: [...w.values()].sort((a, b) => a.date.localeCompare(b.date)),
       meals: [...meals.values()],
       checklist: (local.checklist && local.checklist.length) ? local.checklist : remote.checklist,

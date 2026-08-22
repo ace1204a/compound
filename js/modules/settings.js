@@ -195,6 +195,18 @@ export function buildBrief() {
     lines.push('CUT: not enough weigh-ins this week to compute a trend');
   }
 
+  // Actual intake beats a tick: a tick can't tell 2,400 kcal from 4,500, and
+  // that difference is usually the whole explanation for a weight move.
+  const intakeDays = Array.from({ length: 7 }, (_, i) => addDays(todayKey(), i - 6))
+    .map((k) => ({ k, v: (d.diet.intake || {})[k] })).filter((x) => x.v && typeof x.v.kcal === 'number');
+  if (intakeDays.length) {
+    const avg = intakeDays.reduce((n, x) => n + x.v.kcal, 0) / intakeDays.length;
+    lines.push(`INTAKE: 7-day average ${Math.round(avg)} kcal from ${intakeDays.length}/7 logged days (target 2,200)`);
+    lines.push(`  ${intakeDays.map((x) => `${dayLabel(x.k).split(' ')[0]} ${x.v.kcal}${x.v.protein ? '/' + x.v.protein + 'g' : ''}`).join(' · ')}`);
+  } else {
+    lines.push('INTAKE: nothing logged this week — you are blind on calories, do not infer them from the scale');
+  }
+
   const meals = (d.diet.meals || []).filter((m) => m.state !== 'eaten').length;
   if ((d.diet.meals || []).length) lines.push(`MEAL PREP: ${meals} portions left${meals <= 2 ? ' — COOK NEEDED' : ''}`);
 
@@ -357,7 +369,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.25 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.26 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

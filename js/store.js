@@ -36,6 +36,7 @@ function defaultData() {
     diet: {
       checklist: [],  // { id, name }
       log: {},        // 'YYYY-MM-DD' -> { ruleId: true }
+      intake: {},     // 'YYYY-MM-DD' -> { kcal, protein }  — copied over from MyFitnessPal
       weights: [],    // { date, kg, bf }
       meals: [],      // { id, name, state:'fridge'|'frozen'|'eaten', cookedOn }
     },

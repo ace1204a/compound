@@ -6,6 +6,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
+import { toggleHabitOn } from './habits.js';
 import { el, toast, todayKey, addDays, confirmAction, restoreScroll } from '../ui.js';
 
 function isCleanDay(d, dateKey) {
@@ -206,12 +207,75 @@ function mealPrepCard(rerender) {
   return card;
 }
 
+
+// ---------- intake (numbers come from MyFitnessPal) ----------
+// Deliberately NOT a food logger. MyFitnessPal already does that properly;
+// duplicating it would just be work. Two numbers a night is enough to make
+// the trend readable and to explain a weight move — a tick can't tell 2,400
+// from 4,500, and that difference was the whole story of one bad week.
+const KCAL_TARGET = 2200, PROTEIN_TARGET = 180;
+// iOS shows a numeric keypad for these and won't reject a stray space.
+const numInput = (p={}) => el('input', { type: 'number', step: '1', min: '0', inputmode: 'numeric', ...p });
+const parseNum = (v) => { const n = parseFloat(String(v).replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : null; };
+
+function intakeFor(d, key) { return (d.diet.intake || {})[key] || {}; }
+
+function intakeCard(rerender) {
+  const d = getData(), key = todayKey(), today = intakeFor(d, key);
+  const card = el('div', { class: 'card' },
+    el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, "Today's intake"),
+      el('span', { class: 'chip' }, 'from MyFitnessPal')));
+
+  const kcal = numInput({ placeholder: String(KCAL_TARGET), value: today.kcal != null ? today.kcal : '', style: 'max-width:110px' });
+  const prot = numInput({ placeholder: String(PROTEIN_TARGET), value: today.protein != null ? today.protein : '', style: 'max-width:110px' });
+
+  // Typing the numbers ticks the habits for you — one place to enter it, not two.
+  const save = () => {
+    const k = parseNum(kcal.value), p = parseNum(prot.value);
+    update((x) => {
+      x.diet.intake = x.diet.intake || {};
+      if (k == null && p == null) delete x.diet.intake[key];
+      else x.diet.intake[key] = { ...(x.diet.intake[key] || {}), kcal: k, protein: p };
+    });
+    const hit = (name, ok) => {
+      const h = getData().habits.find((x) => x.name.toLowerCase().includes(name));
+      if (h && !!(h.log || {})[key] !== ok) toggleHabitOn(h.id, key);
+    };
+    if (k != null) hit('calor', Math.abs(k - KCAL_TARGET) <= 150);
+    if (p != null) hit('protein', p >= PROTEIN_TARGET);
+    rerender();
+  };
+  kcal.addEventListener('change', save);
+  prot.addEventListener('change', save);
+
+  card.append(el('div', { class: 'rowflex' }, el('span', { class: 'row__name', style: 'flex:1' }, 'Calories'), kcal,
+    el('span', { class: 'row__meta' }, 'target ' + KCAL_TARGET)));
+  card.append(el('div', { class: 'rowflex', style: 'margin-top:8px' }, el('span', { class: 'row__name', style: 'flex:1' }, 'Protein (g)'), prot,
+    el('span', { class: 'row__meta' }, 'target ' + PROTEIN_TARGET)));
+
+  // 7-day averages — the number that actually explains the scale.
+  const week = Array.from({ length: 7 }, (_, i) => addDays(key, i - 6)).map((k) => intakeFor(d, k));
+  const ks = week.map((x) => x.kcal).filter((n) => typeof n === 'number');
+  if (ks.length) {
+    const avg = ks.reduce((a, b) => a + b, 0) / ks.length;
+    const over = avg - KCAL_TARGET;
+    card.append(el('div', { class: 'hint' },
+      `7-day average ${Math.round(avg)} kcal from ${ks.length} logged ${ks.length === 1 ? 'day' : 'days'} — ` +
+      (Math.abs(over) < 100 ? 'on target.' : (over > 0 ? `${Math.round(over)} over. That is about ${(over * 7 / 7700).toFixed(1)}kg a week in the wrong direction.` : `${Math.round(-over)} under.`))));
+  } else {
+    card.append(el('div', { class: 'hint' }, 'Copy the two totals across at the end of each day. Nothing else needed.'));
+  }
+  return card;
+}
+
 function render(view) {
   const y = window.scrollY;
   const rerender = () => render(view);
   view.replaceChildren();
   view.append(el('div', { class: 'section-title' }, 'Diet'));
   view.append(rulesCard(rerender));
+  view.append(el('div', { class: 'section-title' }, 'Intake'));
+  view.append(intakeCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Cut review'));
   view.append(cutReviewCard());
   view.append(el('div', { class: 'section-title' }, 'Bodyweight'));

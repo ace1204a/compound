@@ -5,7 +5,7 @@
 // ============================================================
 
 import { getData, update, replaceAll, resetAll, uid } from '../store.js';
-import { el, toast, confirmAction, todayKey, addDays, timeToMin } from '../ui.js';
+import { el, toast, confirmAction, todayKey, addDays, timeToMin, keyToDate } from '../ui.js';
 import * as sync from '../sync.js';
 import { TABS, LOCKED, orderedIds } from '../tabs.js';
 import { computeStreaks } from './habits.js';
@@ -98,7 +98,11 @@ export function buildBrief() {
   const d = getData();
   const now = new Date();
   const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-  const lines = [`COMPOUND COACH BRIEF — ${todayKey()} ${hhmm} (${now.toLocaleDateString('en-GB', { weekday: 'long' })})`, ''];
+  // Always label a date with its weekday. Left to work it out from a bare
+  // "2026-08-21" the coach guesses, and it has already misdated a journal entry.
+  const dayLabel = (k) => `${keyToDate(k).toLocaleDateString('en-GB', { weekday: 'long' })} ${k}`;
+  const lines = [`COMPOUND COACH BRIEF — ${dayLabel(todayKey())}, ${hhmm}`,
+    'Every date below is labelled with its weekday. Use the label as given; never work a weekday out from the date yourself.', ''];
 
   // What he is meant to be doing right this minute — the coach's most useful fact.
   const status = (d.dayStatus || {})[todayKey()];
@@ -133,7 +137,7 @@ export function buildBrief() {
     lines.push('LAST CHECK-INS:');
     checkKeys.forEach((k) => {
       const c = d.checkins[k];
-      lines.push(`- ${k}: ${c.rating}/10${c.win ? ' | win: ' + c.win : ''}${c.lesson ? ' | lesson: ' + c.lesson : ''}`);
+      lines.push(`- ${dayLabel(k)}: ${c.rating}/10${c.win ? ' | win: ' + c.win : ''}${c.lesson ? ' | lesson: ' + c.lesson : ''}`);
     });
     lines.push('');
   }
@@ -150,7 +154,7 @@ export function buildBrief() {
     lines.push('PLAN ADHERENCE (last 5 days):');
     last5.forEach((k) => {
       const done = (d.plan.day || []).filter((b) => d.plan.done && d.plan.done[k] && d.plan.done[k][b.id]).length;
-      lines.push(`- ${k}: ${done}/${planTotal} blocks`);
+      lines.push(`- ${dayLabel(k)}: ${done}/${planTotal} blocks`);
     });
     lines.push('');
   }
@@ -202,12 +206,15 @@ export function buildBrief() {
   const jToday = d.journal[todayKey()] || [];
   if (jToday.length) {
     lines.push('', "TODAY'S JOURNAL:");
-    jToday.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach((e) => lines.push(`  ${e.time} — ${e.text.slice(0, 600)}`));
+    jToday.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach((e) => lines.push(`  ${e.time} — ${e.text.slice(0, 800)}`));
   }
-  const recent = [addDays(todayKey(), -1), addDays(todayKey(), -2)].filter((k) => (d.journal[k] || []).length);
+  // A week back, not two days: the coach is asked to name patterns rather than
+  // react to incidents, and it can't do that through a two-day window.
+  const recent = Array.from({ length: 6 }, (_, i) => addDays(todayKey(), -(i + 1)))
+    .filter((k) => (d.journal[k] || []).length);
   if (recent.length) {
-    lines.push('', 'PREVIOUS DAYS (gist):');
-    recent.forEach((k) => lines.push(`- ${k}: ${(d.journal[k] || []).map((e) => e.text).join(' ').replace(/\s+/g, ' ').slice(0, 500)}…`));
+    lines.push('', 'PREVIOUS DAYS (journal, newest first):');
+    recent.forEach((k) => lines.push(`- ${dayLabel(k)}: ${(d.journal[k] || []).map((e) => e.text).join(' ').replace(/\s+/g, ' ').slice(0, 900)}…`));
   }
 
   return lines.join('\n');
@@ -350,7 +357,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.24 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.25 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

@@ -102,7 +102,8 @@ export function buildBrief() {
   // "2026-08-21" the coach guesses, and it has already misdated a journal entry.
   const dayLabel = (k) => `${keyToDate(k).toLocaleDateString('en-GB', { weekday: 'long' })} ${k}`;
   const lines = [`COMPOUND COACH BRIEF — ${dayLabel(todayKey())}, ${hhmm}`,
-    'Every date below is labelled with its weekday. Use the label as given; never work a weekday out from the date yourself.', ''];
+    'Every date below is labelled with its weekday. Use the label as given; never work a weekday out from the date yourself.',
+    'Earlier chat messages begin with the time they were written in [brackets] (do not copy that format). Numbers inside them were true at that moment and may be stale: this brief is the only live data, so never apologise for or "correct" an older answer just because the live numbers differ.', ''];
 
   // What he is meant to be doing right this minute — the coach's most useful fact.
   const status = (d.dayStatus || {})[todayKey()];
@@ -369,7 +370,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.26 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.27 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

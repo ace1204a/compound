@@ -15,6 +15,24 @@ import { el, toast, confirmAction, restoreScroll } from '../ui.js';
 import { buildBrief } from './settings.js';
 import * as sync from '../sync.js';
 
+
+// What the coach is shown of the earlier conversation. Each message is stamped
+// with when it was written, and anything older than 3 days is dropped: without
+// that the model saw a month-old answer next to today's numbers, decided its
+// own earlier reply must have been invented, and apologised for it.
+export function coachHistory(messages, now = Date.now()) {
+  const stamp = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' +
+      d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  };
+  return (messages || []).slice(0, -1)
+    .filter((m) => !m.at || now - Date.parse(m.at) < 3 * 86400000)
+    .slice(-12)
+    .map((m) => ({ role: m.role, text: (m.at ? '[' + stamp(m.at) + '] ' : '') + m.text }));
+}
+
 let sending = false;
 let pendingText = '';   // survives the re-render while a reply is in flight
 let lastUsage = null;
@@ -113,7 +131,7 @@ function render(view) {
         model: getData().coach.model || 'standard',
         profile: getData().coach.profile || '',
         context: buildBrief(),
-        history: (getData().coach.messages || []).slice(0, -1).slice(-12).map((m) => ({ role: m.role, text: m.text })),
+        history: coachHistory(getData().coach.messages),
       });
       if (!res || typeof res.reply !== 'string') throw new Error('The coach sent back nothing usable.');
       lastUsage = res.usage || null;

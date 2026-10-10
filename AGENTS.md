@@ -36,6 +36,16 @@ js/modules/*.js       one file per tab. Each exports { render(view) }.
 - **Bump `VERSION` in `sw.js` on every change to a cached file.** If you don't, devices
   keep serving the OLD file from cache and your fix appears not to work.
 
+### Fields that change over time (v0.28)
+- **Nutrition targets** are `diet.targets`: `[{ from:'YYYY-MM-DD', mode:'cut'|'bulk'|'maintain', kcal, protein }]`.
+  A day is judged by the newest entry with `from <= day` (`targetFor` in `js/modules/targets.js`), so
+  changing the target never rewrites old days. The Diet tab and the coach brief both use the
+  functions in `targets.js` — change the rules there, not in two places. No entries = the original cut.
+- **Retiring a routine**: set `routine.endDate` (last day it shows). Never delete one just to stop it
+  appearing — that rewrites past days.
+- **Gym templates** may carry `schemes: { exerciseName: '3 x 4–6' }`, shown as "Target …" on the draft.
+- Finishing a workout or logging cardio ticks the habit whose name contains "training" (`setHabitByName`).
+
 ## 🚫 Hard rules — do not break these
 
 1. **Never commit personal data.** `_mydata/`, backups, exports, spreadsheets and

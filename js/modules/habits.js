@@ -50,6 +50,13 @@ export function tapHabit(habitId, key) {
   });
 }
 export function toggleHabitOn(habitId, key) { tapHabit(habitId, key); }
+
+/** Put the first habit whose name contains `fragment` into the wanted state for a day.
+ *  Only ever changes it if it differs, so calling it twice can't flip it back. */
+export function setHabitByName(fragment, key, on) {
+  const h = getData().habits.find((x) => x.name.toLowerCase().includes(fragment));
+  if (h && !!(h.log || {})[key] !== on) tapHabit(h.id, key);
+}
 export function toggleToday(habitId) { tapHabit(habitId, todayKey()); }
 
 /** Counter habits: step the count by +1/-1, clamped 0..target (no reset, no overshoot). */

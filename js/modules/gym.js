@@ -7,6 +7,7 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
+import { setHabitByName } from './habits.js';
 import { el, toast, todayKey, confirmAction, monthMatrix, shiftMonth, monthLabel , restoreScroll } from '../ui.js';
 
 // ---------- exercise library (grouped → reliable body parts) ----------
@@ -110,10 +111,14 @@ let pickerOpen = false;
 let pickerTarget = 'draft'; // 'draft' or a template id
 let pickerOpenGroups = {};
 
-function makeEntry(d, name) {
+function makeEntry(d, name, scheme) {
   const prev = lastTimeFor(d, name);
   const note = lastNoteFor(d, name);
-  return { id: uid(), exercise: name, note: note ? note.note : '', sets: prev ? prev.map((s) => ({ kg: s.kg, reps: s.reps, done: false, warmup: !!s.warmup })) : [{ kg: 0, reps: 0, done: false }] };
+  const n = Math.min(6, +(String(scheme || '').match(/^d+/) || [1])[0] || 1);
+  const blank = () => Array.from({ length: n }, () => ({ kg: 0, reps: 0, done: false }));
+  const entry = { id: uid(), exercise: name, note: note ? note.note : '', sets: prev ? prev.map((s) => ({ kg: s.kg, reps: s.reps, done: false, warmup: !!s.warmup })) : blank() };
+  if (scheme) entry.scheme = scheme;
+  return entry;
 }
 function pickerAdd(name, rerender) {
   const d = getData();
@@ -276,6 +281,8 @@ function draftCard(rerender) {
       el('button', { class: 'btn btn--icon', title: 'Move down', onClick: () => { update((x) => moveItem(x.gym.draft.entries, ei, 1)); rerender(); } }, '↓'),
       el('button', { class: 'btn btn--icon', title: 'Remove exercise', onClick: () => { update((x) => { x.gym.draft.entries.splice(ei, 1); }); rerender(); } }, '×')));
 
+    if (entry.scheme) block.append(el('div', { class: 'hint', style: 'margin:0 2px 4px;color:var(--gold)' }, 'Target ' + entry.scheme));
+
     // sticky note (above sets) + last-time history
     const note = el('input', { class: 'exnote', type: 'text', placeholder: '📌 note for this exercise…', value: entry.note || '', maxlength: '120' });
     note.addEventListener('change', () => update((x) => { x.gym.draft.entries[ei].note = note.value.trim(); }));
@@ -316,7 +323,9 @@ function draftCard(rerender) {
   card.append(el('button', { class: 'btn btn--primary btn--full', style: 'margin-top:12px', onClick: () => {
     const total = draft.entries.reduce((n, e) => n + e.sets.length, 0);
     if (!total) { toast('Log at least one set'); return; }
+    const day = (draft.date || todayKey());
     update((x) => { x.gym.sessions.unshift({ id: draft.id || uid(), ...x.gym.draft, date: x.gym.draft.date || todayKey() }); x.gym.draft = null; });
+    setHabitByName('training', day, true);
     rest.endTime = 0; toast('Workout saved 💪'); rerender();
   } }, 'Finish workout'));
   return card;
@@ -326,7 +335,7 @@ function draftCard(rerender) {
 let editingTpl = null;
 function startFromTemplate(t) {
   const d = getData();
-  update((x) => { x.gym.draft = { id: uid(), date: todayKey(), name: t.name, notes: '', entries: t.exercises.map((ex) => makeEntry(x, ex)) }; });
+  update((x) => { x.gym.draft = { id: uid(), date: todayKey(), name: t.name, notes: '', entries: t.exercises.map((ex) => makeEntry(x, ex, (t.schemes || {})[ex])) }; });
 }
 function templatesCard(rerender) {
   const d = getData();
@@ -478,6 +487,7 @@ function cardioCard(rerender) {
       el('button', { class: 'btn btn--primary', onClick: () => {
         if (!+minutes.value) { toast('How many minutes?'); return; }
         update((x) => { x.gym.cardio = x.gym.cardio || []; x.gym.cardio.unshift({ id: uid(), date: cdate.value || todayKey(), type: type.value, distance: +distance.value || 0, minutes: +minutes.value, note: cnote.value.trim() }); });
+        setHabitByName('training', cdate.value || todayKey(), true);
         distance.value = ''; minutes.value = ''; cnote.value = ''; toast('Logged 🏃'); rerender();
       } }, 'Log'))));
 

@@ -100,7 +100,7 @@ function render(view) {
   if (!msgs.length) {
     thread.append(el('div', { class: 'empty' },
       el('span', { class: 'empty__emoji' }, '🧠'),
-      el('div', {}, 'Your coach can see your habits, schedule, training, cut, trading rules, money and journal.'),
+      el('div', {}, 'Your coach can see your habits, schedule, training, food targets, trading rules, money and journal.'),
       el('div', { class: 'hint', style: 'margin-top:6px' }, 'Ask it anything, or start with one of these:')));
   } else {
     msgs.forEach((m) => thread.append(messageEl(m)));

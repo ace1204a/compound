@@ -37,7 +37,8 @@ function defaultData() {
       checklist: [],  // { id, name }
       log: {},        // 'YYYY-MM-DD' -> { ruleId: true }
       intake: {},     // 'YYYY-MM-DD' -> { kcal, protein }  — copied over from MyFitnessPal
-      weights: [],    // { date, kg, bf }
+      weights: [],    // { date, kg, bf, waist? }
+      targets: [],    // { from:'YYYY-MM-DD', mode:'cut'|'bulk'|'maintain', kcal, protein, note? } — newest start date <= the day applies
       meals: [],      // { id, name, state:'fridge'|'frozen'|'eaten', cookedOn }
     },
     trading: {

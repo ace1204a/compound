@@ -21,6 +21,8 @@ function routineOnDay(r, key, status) {
   // a repeating task only counts from the day it was created — it must never
   // appear on days that are already in the past and make them look incomplete
   if (r.startDate && key < r.startDate) return false;
+  // a routine you retire keeps its past days exactly as they were: it just stops appearing
+  if (r.endDate && key > r.endDate) return false;
   // work-only / off-only items appear once the day's status is known
   if (r.only === 'work' && status !== 'working') return false;
   if (r.only === 'off' && status !== 'off') return false;
@@ -209,7 +211,8 @@ function backlogCard(rerender) {
 function routinesCard(rerender) {
   const d = getData();
   const body = el('div', { class: 'collapse__body' + (showRoutines ? ' open' : '') });
-  d.routines.forEach((r) => {
+  const live = d.routines.filter((r) => !r.endDate || r.endDate >= todayKey());
+  live.forEach((r) => {
     if (editingRoutine === r.id) { body.append(routineEditor(r, rerender)); return; }
     const label = r.freq === 'daily' ? 'daily' : (r.freq.days || []).map((n) => DOW[DOW_NUM.indexOf(n)]).join(' ');
     body.append(el('div', { class: 'row' },
@@ -217,10 +220,10 @@ function routinesCard(rerender) {
       el('button', { class: 'btn btn--icon', title: 'Edit', onClick: () => { editingRoutine = r.id; rerender(); } }, '✎'),
       el('button', { class: 'btn btn--icon', title: 'Delete routine', onClick: () => { if (confirmAction(`Delete repeating task "${r.title}"?`)) { update((x) => { x.routines = x.routines.filter((a) => a.id !== r.id); }); rerender(); } } }, '×')));
   });
-  if (!d.routines.length) body.append(el('div', { class: 'empty muted' }, 'No repeating tasks yet. Add one above with “Daily” or “Pick days”.'));
+  if (!live.length) body.append(el('div', { class: 'empty muted' }, 'No repeating tasks yet. Add one above with “Daily” or “Pick days”.'));
 
   const head = el('button', { class: 'collapse__head', onClick: () => { showRoutines = !showRoutines; body.classList.toggle('open', showRoutines); head.querySelector('.collapse__arrow').textContent = showRoutines ? '▾' : '▸'; } },
-    el('span', {}, `↻ Repeating tasks · ${d.routines.length}`), el('span', { class: 'collapse__arrow' }, showRoutines ? '▾' : '▸'));
+    el('span', {}, `↻ Repeating tasks · ${live.length}`), el('span', { class: 'collapse__arrow' }, showRoutines ? '▾' : '▸'));
   return el('div', { class: 'card card--tight' }, head, body);
 }
 

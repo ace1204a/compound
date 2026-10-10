@@ -12,6 +12,7 @@ import { computeStreaks } from './habits.js';
 import { cleanStreak } from './diet.js';
 import { cleanRun } from './trading.js';
 import { nowAndNextTask, tasksForDay } from './tasks.js';
+import { MODES, targetFor, weekTrend, trendVerdict, targetRange, kcalText } from './targets.js';
 
 function exportData() {
   const blob = new Blob([JSON.stringify(getData(), null, 2)], { type: 'application/json' });
@@ -182,19 +183,19 @@ export function buildBrief() {
   const newInbox = d.inbox.filter((i) => i.status === 'new').length;
   if (newInbox) lines.push(`INBOX: ${newInbox} items waiting for review`);
 
-  // Weight trend the same way the Diet tab computes it, so the coach and the
-  // app never disagree about whether the cut is moving.
-  const avg = (from, to) => {
-    const xs = (d.diet.weights || []).filter((w) => w.date > from && w.date <= to).map((w) => +w.kg).filter(Number.isFinite);
-    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-  };
-  const thisWk = avg(addDays(todayKey(), -7), todayKey());
-  const lastWk = avg(addDays(todayKey(), -14), addDays(todayKey(), -7));
-  if (thisWk != null && lastWk != null) {
-    lines.push(`CUT: 7-day avg ${thisWk.toFixed(2)} kg vs ${lastWk.toFixed(2)} kg previous = ${(thisWk - lastWk >= 0 ? '+' : '') + (thisWk - lastWk).toFixed(2)} kg/wk (target loss 0.3–0.7)`);
-  } else if (thisWk == null) {
-    lines.push('CUT: not enough weigh-ins this week to compute a trend');
+  // Target and weight trend come from the same functions the Diet tab uses, so the
+  // coach and the app can never disagree about whether the plan is working.
+  const tgt = targetFor(d, todayKey());
+  lines.push(`NUTRITION TARGET: ${MODES[tgt.mode].label.toUpperCase()} ${kcalText(tgt)} kcal, protein ${tgt.protein}g${tgt.from ? ' (since ' + dayLabel(tgt.from) + ')' : ' (the original August cut; no newer target saved)'}${tgt.note ? ', ' + tgt.note : ''}`);
+  const wt = weekTrend(d.diet.weights || [], todayKey());
+  if (wt.rate != null) {
+    const v = trendVerdict(tgt, todayKey(), wt);
+    lines.push(`${tgt.mode.toUpperCase()} TREND: 7-day avg ${wt.thisWk.toFixed(2)} kg vs ${wt.lastWk.toFixed(2)} kg previous = ${(wt.rate >= 0 ? '+' : '') + wt.rate.toFixed(2)} kg/wk (target ${targetRange(tgt.mode)}). ${v.verdict}`);
+  } else if (wt.thisWk == null) {
+    lines.push(`${tgt.mode.toUpperCase()} TREND: not enough weigh-ins this week to compute a trend`);
   }
+  const lastWaist = [...(d.diet.weights || [])].filter((x) => x.waist).sort((x, y) => y.date.localeCompare(x.date))[0];
+  if (lastWaist) lines.push(`WAIST: ${lastWaist.waist} cm on ${dayLabel(lastWaist.date)}`);
 
   // Actual intake beats a tick: a tick can't tell 2,400 kcal from 4,500, and
   // that difference is usually the whole explanation for a weight move.
@@ -202,7 +203,7 @@ export function buildBrief() {
     .map((k) => ({ k, v: (d.diet.intake || {})[k] })).filter((x) => x.v && typeof x.v.kcal === 'number');
   if (intakeDays.length) {
     const avg = intakeDays.reduce((n, x) => n + x.v.kcal, 0) / intakeDays.length;
-    lines.push(`INTAKE: 7-day average ${Math.round(avg)} kcal from ${intakeDays.length}/7 logged days (target 2,200)`);
+    lines.push(`INTAKE: 7-day average ${Math.round(avg)} kcal from ${intakeDays.length}/7 logged days (target ${kcalText(tgt)})`);
     lines.push(`  ${intakeDays.map((x) => `${dayLabel(x.k).split(' ')[0]} ${x.v.kcal}${x.v.protein ? '/' + x.v.protein + 'g' : ''}`).join(' · ')}`);
   } else {
     lines.push('INTAKE: nothing logged this week — you are blind on calories, do not infer them from the scale');
@@ -370,7 +371,7 @@ function render(view) {
   // About
   view.append(el('div', { class: 'card' },
     el('div', { class: 'card__title', style: 'margin-bottom:4px' }, 'About'),
-    el('div', { class: 'card__sub' }, 'Compound · v0.27 · small reps, compounded · built with Claude'),
+    el('div', { class: 'card__sub' }, 'Compound · v0.28 · small reps, compounded · built with Claude'),
     el('div', { class: 'card__sub', style: 'margin-top:6px' },
       `Habits ${d.habits.length} · Tasks ${d.tasks.length} · Check-ins ${Object.keys(d.checkins).length} · Goals ${d.goals.length} · Workouts ${d.gym.sessions.length} · Inbox ${d.inbox.length} · Books ${d.books.length}`)));
 }

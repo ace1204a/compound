@@ -6,8 +6,9 @@
 // ============================================================
 
 import { getData, update, uid } from '../store.js';
-import { toggleHabitOn } from './habits.js';
+import { setHabitByName } from './habits.js';
 import { el, toast, todayKey, addDays, confirmAction, restoreScroll } from '../ui.js';
+import { MODES, targetFor, kcalOk, proteinOk, kcalText, upsertTarget, weekTrend, trendVerdict, targetRange } from './targets.js';
 
 function isCleanDay(d, dateKey) {
   if (!d.diet.checklist.length) return false;
@@ -102,15 +103,30 @@ function weightCard(rerender) {
 
   const kg = el('input', { type: 'number', placeholder: 'kg', step: '0.1', min: '0', inputmode: 'decimal' });
   const bf = el('input', { type: 'number', placeholder: 'body fat %', step: '0.1', min: '0', inputmode: 'decimal' });
+  const waist = el('input', { type: 'number', placeholder: 'waist cm (weekly)', step: '0.1', min: '0', inputmode: 'decimal' });
   card.append(el('div', { class: 'rowflex', style: 'margin-top:10px' }, kg, bf,
     el('button', { class: 'btn btn--primary', onClick: () => {
-      const v = +kg.value; if (!v) { toast('Enter your weight'); return; }
+      const v = +kg.value, w = +waist.value || null;
+      const have = getData().diet.weights.find((a) => a.date === todayKey());
+      // waist on its own is fine once today's weight is in
+      if (!v && !(w && have)) { toast(w ? 'Log your weight first, then the waist' : 'Enter your weight'); return; }
       update((x) => {
+        const prev = x.diet.weights.find((a) => a.date === todayKey()) || {};
         x.diet.weights = x.diet.weights.filter((a) => a.date !== todayKey());
-        x.diet.weights.push({ date: todayKey(), kg: v, bf: +bf.value || null });
+        const rec = { ...prev, date: todayKey(), kg: v || prev.kg, bf: +bf.value || prev.bf || null };
+        if (w || prev.waist) rec.waist = w || prev.waist;
+        x.diet.weights.push(rec);
       });
-      kg.value = ''; bf.value = ''; toast('Logged'); rerender();
+      kg.value = ''; bf.value = ''; waist.value = ''; toast('Logged'); rerender();
     } }, 'Log')));
+  card.append(el('div', { class: 'rowflex', style: 'margin-top:8px' }, waist));
+  const withWaist = weights.filter((x) => x.waist);
+  if (withWaist.length) {
+    const lw = withWaist[withWaist.length - 1], fw = withWaist[0];
+    card.append(el('div', { class: 'hint' }, `waist ${lw.waist} cm (${lw.date})` +
+      (withWaist.length > 1 ? ` · ${lw.waist - fw.waist >= 0 ? '+' : ''}${(lw.waist - fw.waist).toFixed(1)} cm since ${fw.date}` : '') +
+      '. Same spot, same time, once a week.'));
+  }
 
   // lean mass: the number that actually tells you if the cut is working
   const withBf = weights.filter((w) => w.bf);
@@ -124,47 +140,48 @@ function weightCard(rerender) {
       const f = withBf[0];
       const leanFirst = f.kg * (1 - f.bf / 100);
       const dLean = (+lean - leanFirst).toFixed(1);
-      card.append(el('div', { class: 'hint' }, `lean mass ${dLean >= 0 ? '+' : ''}${dLean}kg since ${f.date} — holding lean mass while weight drops = the cut is working`));
+      card.append(el('div', { class: 'hint' }, `lean mass ${dLean >= 0 ? '+' : ''}${dLean}kg since ${f.date} — in either phase it should hold or rise`));
     }
   }
   return card;
 }
 
-// ---------- weekly cut review: 7-day averages, never single days ----------
-function avgOf(weights, fromKey, toKey) {
-  const inRange = weights.filter((w) => w.date >= fromKey && w.date <= toKey);
-  if (!inRange.length) return null;
-  return inRange.reduce((n, w) => n + (+w.kg || 0), 0) / inRange.length;
-}
-function cutReviewCard() {
-  const d = getData();
+// ---------- weekly trend review: 7-day averages, never single days ----------
+function trendCard(rerender) {
+  const d = getData(), today = todayKey();
+  const t = targetFor(d, today);
   const weights = [...d.diet.weights].sort((a, b) => a.date.localeCompare(b.date));
+  const w = weekTrend(weights, today);
   const card = el('div', { class: 'card card--accent' });
-  card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, '⚖️ Weekly cut review'), el('span', { class: 'card__sub' }, '7-day averages only')));
+  card.append(el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, `⚖️ Weekly ${MODES[t.mode].label.toLowerCase()} review`), el('span', { class: 'card__sub' }, '7-day averages only')));
 
-  const thisWeek = avgOf(weights, addDays(todayKey(), -6), todayKey());
-  const lastWeek = avgOf(weights, addDays(todayKey(), -13), addDays(todayKey(), -7));
-
-  if (thisWeek == null || lastWeek == null) {
+  if (w.thisWk == null || w.lastWk == null) {
     card.append(el('div', { class: 'empty muted' }, 'Need ~2 weeks of morning weigh-ins to compare. Keep logging daily.'));
-    if (thisWeek != null) card.append(el('div', { class: 'row__meta' }, `this week's average: ${thisWeek.toFixed(2)} kg`));
+    if (w.thisWk != null) card.append(el('div', { class: 'row__meta' }, `this week's average: ${w.thisWk.toFixed(2)} kg`));
     return card;
   }
 
-  const rate = lastWeek - thisWeek;           // + = losing
-  let verdict, cls;
-  if (rate >= 0.3 && rate <= 0.7) { verdict = 'On target — change nothing. This is exactly the rate you want.'; cls = 'chip--key'; }
-  else if (rate > 0.8) { verdict = 'Losing fast. If this repeats next week, add 100–150 kcal/day.'; cls = 'chip--streak'; }
-  else if (rate < 0.25) { verdict = 'Stalling. If this repeats next week, drop 100 kcal/day.'; cls = 'chip--streak'; }
-  else { verdict = 'Slightly under target rate — hold and reassess next week.'; cls = ''; }
-
+  const rate = w.rate;                          // + = gaining
+  const v = trendVerdict(t, today, w);
+  const tile = (label, val, cls) => el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, label), el('div', { class: 'ftile__val' + (cls ? ' ' + cls : '') }, val));
+  const good = t.mode === 'cut' ? rate < 0 : rate > 0;
   card.append(el('div', { class: 'fgrid' },
-    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'This week avg'), el('div', { class: 'ftile__val' }, thisWeek.toFixed(2) + ' kg')),
-    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'Last week avg'), el('div', { class: 'ftile__val' }, lastWeek.toFixed(2) + ' kg')),
-    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'Rate'), el('div', { class: 'ftile__val ' + (rate > 0 ? 'pos' : 'neg') }, (rate > 0 ? '−' : '+') + Math.abs(rate).toFixed(2) + ' kg/wk')),
-    el('div', { class: 'ftile' }, el('div', { class: 'ftile__label' }, 'Target'), el('div', { class: 'ftile__val' }, '0.3–0.7'))));
-  card.append(el('div', { class: 'banner banner--gold', style: 'margin:12px 0 0' }, verdict));
-  card.append(el('div', { class: 'hint' }, 'Two consecutive weeks before changing anything. Body-fat % from the scale is secondary — trust weight trend, waist, photos, gym and running performance.'));
+    tile('This week avg', w.thisWk.toFixed(2) + ' kg'),
+    tile('Last week avg', w.lastWk.toFixed(2) + ' kg'),
+    tile('Rate', (rate >= 0 ? '+' : '−') + Math.abs(rate).toFixed(2) + ' kg/wk', good ? 'pos' : 'neg'),
+    tile('Target', targetRange(t.mode))));
+  const banner = el('div', { class: 'banner banner--gold', style: 'margin:12px 0 0' }, v.verdict);
+  card.append(banner);
+  if (v.delta) {
+    const next = t.kcal + v.delta;
+    banner.append(el('div', { style: 'margin-top:8px' },
+      el('button', { class: 'btn btn--sm btn--primary', onClick: () => {
+        if (!confirmAction(`Set the target to ${next.toLocaleString('en-GB')} kcal from today? Past days keep their old target.`)) return;
+        update((x) => { x.diet.targets = upsertTarget(x.diet.targets, { ...t, from: today, kcal: next, note: `${v.delta > 0 ? '+' : ''}${v.delta} kcal from the weekly review` }); });
+        rerender();
+      } }, `Review: ${v.delta > 0 ? 'add' : 'remove'} ${Math.abs(v.delta)} kcal → ${next.toLocaleString('en-GB')}`)));
+  }
+  card.append(el('div', { class: 'hint' }, 'Two consecutive weeks before changing anything. Body-fat % from the scale is secondary: trust the weight trend, waist, photos, gym and running performance.'));
   return card;
 }
 
@@ -213,21 +230,49 @@ function mealPrepCard(rerender) {
 // duplicating it would just be work. Two numbers a night is enough to make
 // the trend readable and to explain a weight move — a tick can't tell 2,400
 // from 4,500, and that difference was the whole story of one bad week.
-const KCAL_TARGET = 2200, PROTEIN_TARGET = 180;
+// The target itself lives in diet.targets (see targets.js), so a cut-to-bulk
+// switch never rewrites how the old days are judged.
 // iOS shows a numeric keypad for these and won't reject a stray space.
 const numInput = (p={}) => el('input', { type: 'number', step: '1', min: '0', inputmode: 'numeric', ...p });
 const parseNum = (v) => { const n = parseFloat(String(v).replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : null; };
 
 function intakeFor(d, key) { return (d.diet.intake || {})[key] || {}; }
 
+let editingTarget = false;
+
+function targetEditor(rerender) {
+  const d = getData(), cur = targetFor(d, todayKey());
+  const box = el('div', { style: 'margin-top:12px;padding-top:10px;border-top:1px solid var(--line)' });
+  const mode = el('select', {}, ...Object.entries(MODES).map(([k, m]) => el('option', { value: k }, m.label)));
+  mode.value = cur.mode;
+  const kcal = numInput({ value: cur.kcal, style: 'max-width:100px' });
+  const prot = numInput({ value: cur.protein, style: 'max-width:90px' });
+  const from = el('input', { type: 'date', value: todayKey(), style: 'max-width:150px' });
+  box.append(el('div', { class: 'rowflex' }, mode, kcal, el('span', { class: 'row__meta' }, 'kcal'), prot, el('span', { class: 'row__meta' }, 'g protein')));
+  box.append(el('div', { class: 'rowflex', style: 'margin-top:8px' }, el('span', { class: 'row__meta' }, 'starts'), from,
+    el('button', { class: 'btn btn--primary', onClick: () => {
+      const k = parseNum(kcal.value), p = parseNum(prot.value);
+      if (!k || !p || !from.value) { toast('Needs calories, protein and a start date'); return; }
+      update((x) => { x.diet.targets = upsertTarget(x.diet.targets, { from: from.value, mode: mode.value, kcal: Math.round(k), protein: Math.round(p) }); });
+      editingTarget = false; toast('Target saved. Earlier days keep their old one.'); rerender();
+    } }, 'Save'),
+    el('button', { class: 'btn btn--ghost', onClick: () => { editingTarget = false; rerender(); } }, 'Cancel')));
+  const hist = [...(d.diet.targets || [])].sort((a, b) => b.from.localeCompare(a.from));
+  box.append(el('div', { class: 'hint' }, 'History: ' + (hist.length
+    ? hist.map((t) => `${t.from} ${MODES[t.mode] ? MODES[t.mode].label.toLowerCase() : t.mode} ${kcalText(t)}/${t.protein}g`).join(' · ') + ' · before that, the original cut 2,200/180g'
+    : 'only the original cut, 2,200/180g')));
+  return box;
+}
+
 function intakeCard(rerender) {
   const d = getData(), key = todayKey(), today = intakeFor(d, key);
+  const tg = targetFor(d, key);
   const card = el('div', { class: 'card' },
     el('div', { class: 'card__head' }, el('div', { class: 'card__title' }, "Today's intake"),
-      el('span', { class: 'chip' }, 'from MyFitnessPal')));
+      el('span', { class: 'chip chip--key' }, `${MODES[tg.mode].label} · ${kcalText(tg)} kcal`)));
 
-  const kcal = numInput({ placeholder: String(KCAL_TARGET), value: today.kcal != null ? today.kcal : '', style: 'max-width:110px' });
-  const prot = numInput({ placeholder: String(PROTEIN_TARGET), value: today.protein != null ? today.protein : '', style: 'max-width:110px' });
+  const kcal = numInput({ placeholder: String(tg.kcal), value: today.kcal != null ? today.kcal : '', style: 'max-width:110px' });
+  const prot = numInput({ placeholder: String(tg.protein), value: today.protein != null ? today.protein : '', style: 'max-width:110px' });
 
   // Typing the numbers ticks the habits for you — one place to enter it, not two.
   const save = () => {
@@ -237,34 +282,39 @@ function intakeCard(rerender) {
       if (k == null && p == null) delete x.diet.intake[key];
       else x.diet.intake[key] = { ...(x.diet.intake[key] || {}), kcal: k, protein: p };
     });
-    const hit = (name, ok) => {
-      const h = getData().habits.find((x) => x.name.toLowerCase().includes(name));
-      if (h && !!(h.log || {})[key] !== ok) toggleHabitOn(h.id, key);
-    };
-    if (k != null) hit('calor', Math.abs(k - KCAL_TARGET) <= 150);
-    if (p != null) hit('protein', p >= PROTEIN_TARGET);
+    if (k != null) setHabitByName('calor', key, kcalOk(tg, k));
+    if (p != null) setHabitByName('protein', key, proteinOk(tg, p));
     rerender();
   };
   kcal.addEventListener('change', save);
   prot.addEventListener('change', save);
 
   card.append(el('div', { class: 'rowflex' }, el('span', { class: 'row__name', style: 'flex:1' }, 'Calories'), kcal,
-    el('span', { class: 'row__meta' }, 'target ' + KCAL_TARGET)));
+    el('span', { class: 'row__meta' }, 'target ' + kcalText(tg))));
   card.append(el('div', { class: 'rowflex', style: 'margin-top:8px' }, el('span', { class: 'row__name', style: 'flex:1' }, 'Protein (g)'), prot,
-    el('span', { class: 'row__meta' }, 'target ' + PROTEIN_TARGET)));
+    el('span', { class: 'row__meta' }, 'target ' + tg.protein)));
 
-  // 7-day averages — the number that actually explains the scale.
-  const week = Array.from({ length: 7 }, (_, i) => addDays(key, i - 6)).map((k) => intakeFor(d, k));
-  const ks = week.map((x) => x.kcal).filter((n) => typeof n === 'number');
-  if (ks.length) {
-    const avg = ks.reduce((a, b) => a + b, 0) / ks.length;
-    const over = avg - KCAL_TARGET;
-    card.append(el('div', { class: 'hint' },
-      `7-day average ${Math.round(avg)} kcal from ${ks.length} logged ${ks.length === 1 ? 'day' : 'days'} — ` +
-      (Math.abs(over) < 100 ? 'on target.' : (over > 0 ? `${Math.round(over)} over. That is about ${(over * 7 / 7700).toFixed(1)}kg a week in the wrong direction.` : `${Math.round(-over)} under.`))));
+  // Last 7 days, each judged against the target that applied THAT day.
+  const keys = Array.from({ length: 7 }, (_, i) => addDays(key, i - 6));
+  const days = keys.map((k) => ({ k, v: intakeFor(d, k), t: targetFor(d, k) })).filter((x) => typeof x.v.kcal === 'number');
+  if (days.length) {
+    card.append(el('div', { class: 'row__meta', style: 'margin-top:10px;flex-wrap:wrap' }, ...days.map((x) =>
+      el('span', { class: 'chip' + (kcalOk(x.t, x.v.kcal) ? ' chip--key' : '') },
+        new Date(x.k + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + x.v.kcal))));
+    const avg = days.reduce((a, x) => a + x.v.kcal, 0) / days.length;
+    const gap = avg - tg.kcal;       // + = over target
+    const per = (Math.abs(gap) * 7 / 7700).toFixed(1);
+    let msg;
+    if (kcalOk(tg, avg)) msg = 'on target.';
+    else if (tg.mode === 'bulk') msg = gap < 0 ? `${Math.round(-gap)} under. That is about ${per}kg a week of growth you are not getting.` : `${Math.round(gap)} over, fine unless the scale runs ahead of plan.`;
+    else msg = gap > 0 ? `${Math.round(gap)} over. That is about ${per}kg a week in the wrong direction.` : `${Math.round(-gap)} under.`;
+    card.append(el('div', { class: 'hint' }, `7-day average ${Math.round(avg)} kcal from ${days.length} logged ${days.length === 1 ? 'day' : 'days'}: ${msg}`));
   } else {
     card.append(el('div', { class: 'hint' }, 'Copy the two totals across at the end of each day. Nothing else needed.'));
   }
+
+  if (editingTarget) card.append(targetEditor(rerender));
+  else card.append(el('button', { class: 'btn btn--sm btn--ghost', style: 'margin-top:10px', onClick: () => { editingTarget = true; rerender(); } }, 'Edit target'));
   return card;
 }
 
@@ -276,8 +326,8 @@ function render(view) {
   view.append(rulesCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Intake'));
   view.append(intakeCard(rerender));
-  view.append(el('div', { class: 'section-title' }, 'Cut review'));
-  view.append(cutReviewCard());
+  view.append(el('div', { class: 'section-title' }, 'Weight trend'));
+  view.append(trendCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Bodyweight'));
   view.append(weightCard(rerender));
   view.append(el('div', { class: 'section-title' }, 'Meal prep'));

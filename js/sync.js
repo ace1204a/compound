@@ -217,8 +217,12 @@ export const MERGERS = {
     const meals = new Map((remote.meals || []).map((m) => [m.id, m]));
     for (const m of (local.meals || [])) meals.set(m.id, { ...(meals.get(m.id) || {}), ...m });
     const intake = { ...(remote.intake || {}), ...(local.intake || {}) };
+    // targets: union by start date, so a target saved on one device never wipes another's
+    const tg = new Map((remote.targets || []).map((t) => [t.from, t]));
+    for (const t of (local.targets || [])) tg.set(t.from, t);
     return {
       ...remote, ...local, log, intake,
+      targets: [...tg.values()].sort((a, b) => a.from.localeCompare(b.from)),
       weights: [...w.values()].sort((a, b) => a.date.localeCompare(b.date)),
       meals: [...meals.values()],
       checklist: (local.checklist && local.checklist.length) ? local.checklist : remote.checklist,

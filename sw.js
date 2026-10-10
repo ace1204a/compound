@@ -7,7 +7,7 @@
 // Bump VERSION on every deploy to invalidate old caches.
 // ============================================================
 
-const VERSION = 'compound-v32';
+const VERSION = 'compound-v33';
 const CORE = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ const CORE = [
   './js/modules/goals.js',
   './js/modules/gym.js',
   './js/modules/diet.js',
+  './js/modules/targets.js',
   './js/modules/trading.js',
   './js/modules/inbox.js',
   './js/modules/finance.js',
